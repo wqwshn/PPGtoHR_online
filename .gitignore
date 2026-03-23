@@ -1,0 +1,40 @@
+# Keil MDK-ARM 编译产物
+MDK-ARM/L452CEU6/*.axf
+MDK-ARM/L452CEU6/*.o
+MDK-ARM/L452CEU6/*.d
+MDK-ARM/L452CEU6/*.crf
+MDK-ARM/L452CEU6/*.lst
+MDK-ARM/L452CEU6/*.map
+MDK-ARM/L452CEU6/*.htm
+MDK-ARM/L452CEU6/*.build_log.htm
+MDK-ARM/L452CEU6/*.dep
+MDK-ARM/L452CEU6/*.lnp
+MDK-ARM/L452CEU6/*.sct
+MDK-ARM/L452CEU6/*_sct.Bak
+
+# Keil 用户配置文件
+MDK-ARM/*.uvguix.*
+MDK-ARM/*.uvoptx
+MDK-ARM/*.uvopt
+
+# STM32CubeMX 生成文件
+*.ioc
+
+# Claude Code 相关
+.claude/
+
+# IDE 配置文件
+.vscode/
+*.swp
+*.swo
+*~
+
+# 编译输出文件夹
+MDK-ARM/DebugConfig/
+MDK-ARM/L452CEU6/Listings/
+MDK-ARM/L452CEU6/Objects/
+
+# 临时文件
+*.tmp
+*.bak
+*.log
