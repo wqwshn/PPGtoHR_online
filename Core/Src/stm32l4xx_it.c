@@ -63,6 +63,7 @@ extern DMA_HandleTypeDef hdma_spi1_rx;
 extern DMA_HandleTypeDef hdma_spi1_tx;
 extern DMA_HandleTypeDef hdma_spi2_rx;
 extern DMA_HandleTypeDef hdma_spi2_tx;
+extern TIM_HandleTypeDef htim3;
 extern TIM_HandleTypeDef htim15;
 extern TIM_HandleTypeDef htim16;
 extern DMA_HandleTypeDef hdma_usart2_rx;
@@ -324,6 +325,20 @@ void TIM1_UP_TIM16_IRQHandler(void)
 }
 
 /**
+  * @brief This function handles TIM3 global interrupt.
+  */
+void TIM3_IRQHandler(void)
+{
+  /* USER CODE BEGIN TIM3_IRQn 0 */
+
+  /* USER CODE END TIM3_IRQn 0 */
+  HAL_TIM_IRQHandler(&htim3);
+  /* USER CODE BEGIN TIM3_IRQn 1 */
+
+  /* USER CODE END TIM3_IRQn 1 */
+}
+
+/**
   * @brief This function handles USART2 global interrupt.
   */
 void USART2_IRQHandler(void)
@@ -342,9 +357,7 @@ void USART2_IRQHandler(void)
       recv_end_flag = 1; // ???? main.c ?????????
   }
   /* USER CODE END USART2_IRQn 0 */
-  
   HAL_UART_IRQHandler(&huart2);
-  
   /* USER CODE BEGIN USART2_IRQn 1 */
 
   /* USER CODE END USART2_IRQn 1 */

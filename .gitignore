@@ -38,3 +38,9 @@ MDK-ARM/L452CEU6/Objects/
 *.tmp
 *.bak
 *.log
+
+# STM32CubeMX 用户配置
+.mxproject
+
+# CMake 构建目录
+build/
