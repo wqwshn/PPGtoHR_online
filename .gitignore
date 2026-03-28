@@ -44,3 +44,13 @@ MDK-ARM/L452CEU6/Objects/
 
 # CMake 构建目录
 build/
+
+# MATLAB 离线算法参考 (不纳入版本管理)
+outline-HRsolver/
+
+# Python 字节码缓存
+__pycache__/
+
+# 一次性测试脚本
+tools/hr_monitor/test_gui.py
+tools/hr_monitor/test_protocol.py
