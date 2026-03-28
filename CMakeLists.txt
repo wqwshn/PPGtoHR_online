@@ -114,20 +114,20 @@ extract_makefile_list("LIBDIR" libdirs "-L" TRUE)
 print_list(libdirs)
 
 # --------------------------------- CMSIS-DSP -------------------------------- #
-# Example of using CMSIS-DSP library on CM7 devices. Uncomment the following lines to use CMSIS-DSP.
-
-# include_directories(
-#     Drivers/CMSIS/Include
-#     Drivers/CMSIS/DSP/Include/
-# )
-# link_directories(
-#     Drivers/CMSIS/DSP/Lib/ARM
-#     Drivers/CMSIS/DSP/Lib/GCC
-# )
-# add_compile_definitions(
-#     ARM_MATH_CM7
-# )
-# list(APPEND libs arm_cortexM7lfdp_math)
+# 为Cortex-M4F启用CMSIS-DSP库
+include_directories(
+    Drivers/CMSIS/Include
+    Drivers/CMSIS/DSP/Include/
+)
+link_directories(
+    Drivers/CMSIS/DSP/Lib/GCC
+)
+add_compile_definitions(
+    ARM_MATH_CM4
+    __FPU_PRESENT=1
+    ARM_MATH_MATRIX_CHECK
+)
+list(APPEND libs arm_cortexM4lf_math)
 
 # ------------------------------- Source Files ------------------------------- #
 extract_makefile_list("C_SOURCES" c_sources "" FALSE)
@@ -205,5 +205,12 @@ if (NOT target_device)
 else()
     string(TOLOWER ${target_device} target_device)
     set(openocd_target "target/${target_device}x.cfg")
-    file(WRITE ${CMAKE_SOURCE_DIR}/openocd.cfg "source [find interface/stlink.cfg]\ntransport select hla_swd\nsource [find ${openocd_target}]\n")
+    # 生成OpenOCD配置文件
+    file(WRITE ${CMAKE_SOURCE_DIR}/openocd.cfg
+        "source [find interface/stlink.cfg]\n"
+        "transport select hla_swd\n"
+        "source [find ${openocd_target}]\n"
+        "# 适配器速度配置\n"
+        "adapter speed 1000\n"
+    )
 endif()
