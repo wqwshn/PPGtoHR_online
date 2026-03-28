@@ -40,6 +40,9 @@ extern "C" {
 #define HR_BANDPASS_LOW     0.5f    /* 带通滤波下限 */
 #define HR_BANDPASS_HIGH    5.0f    /* 带通滤波上限 */
 
+/* ACC 灵敏度 (LSM9DS1 @ ±4g 量程) */
+#define HR_ACC_LSB_PER_G    8192.0f /* 16-bit ADC, ±4g: 32768/4 = 8192 LSB/g */
+
 /* ============================================================
  * 算法参数结构体 (运行时可调)
  * ============================================================ */
@@ -54,7 +57,7 @@ typedef struct {
     float   Slew_Limit_Rest_BPM;    /* 静息段心率变化率限制 (BPM/s) */
     float   Slew_Step_Rest_BPM;     /* 静息段心率步进 (BPM) */
     float   Motion_Th_Scale;        /* 运动阈值倍数, 默认 3.0 */
-    float   Default_Motion_Th;      /* 默认运动阈值 (立即可用, 默认 200.0) */
+    float   Default_Motion_Th;      /* 默认运动阈值 (g 值, 默认 0.07g) */
     uint8_t Spec_Penalty_Enable;    /* 是否启用频谱惩罚 */
 } HR_Config_t;
 
@@ -86,17 +89,17 @@ typedef struct {
     float   filt_accz[HR_WIN_SAMPLES];
     float   filt_hf[HR_WIN_SAMPLES];
 
-    /* --- IIR 带通滤波器状态 (5 通道 x 2 biquad 节, 流式) --- */
+    /* --- IIR 带通滤波器状态 (5 通道 x 4 biquad 节, 流式) --- */
     arm_biquad_casd_df1_inst_f32 biquad_ppg;
     arm_biquad_casd_df1_inst_f32 biquad_accx;
     arm_biquad_casd_df1_inst_f32 biquad_accy;
     arm_biquad_casd_df1_inst_f32 biquad_accz;
     arm_biquad_casd_df1_inst_f32 biquad_hf;
-    float   iir_state_ppg[8];      /* 2 sections x 4 state */
-    float   iir_state_accx[8];
-    float   iir_state_accy[8];
-    float   iir_state_accz[8];
-    float   iir_state_hf[8];
+    float   iir_state_ppg[16];     /* 4 sections x 4 state */
+    float   iir_state_accx[16];
+    float   iir_state_accy[16];
+    float   iir_state_accz[16];
+    float   iir_state_hf[16];
     float   iir_filt_1s_ppg[HR_STEP_SAMPLES];   /* 1 秒滤波临时输出 */
     float   iir_filt_1s_accx[HR_STEP_SAMPLES];
     float   iir_filt_1s_accy[HR_STEP_SAMPLES];

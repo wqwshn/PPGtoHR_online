@@ -17,9 +17,9 @@ extern "C" {
 #endif
 
 /* 预计算的 4 阶 Butterworth 带通滤波器系数 (0.5-5 Hz @ 125 Hz) */
-/* 2 个 biquad 节, 每节 5 个系数 [b0, b1, b2, -a1, -a2] */
+/* 4 个 biquad 节, 每节 5 个系数 [b0, b1, b2, -a1, -a2] */
 /* 外部通过 MATLAB/Octave 预计算, 运行时不可修改 */
-extern const float HR_BPF_COEFFS[10];  /* 2 sections x 5 coeffs */
+extern const float HR_BPF_COEFFS[20];  /* 4 sections x 5 coeffs */
 
 /**
  * @brief 对信号进行 FFT 并提取频谱峰值

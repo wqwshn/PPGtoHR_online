@@ -69,6 +69,7 @@ TRANSLATIONS = {
         "ppg_signal": "PPG 信号:",
         "calibration": "校准进度:",
         "window": "数据窗口:",
+        "sampling_rate": "采样率:",
         "calibrated": "已校准",
         "pending": "待校准",
         "ready": "就绪",
@@ -97,6 +98,7 @@ TRANSLATIONS = {
         "ppg_signal": "PPG Signal:",
         "calibration": "Calibration:",
         "window": "Window:",
+        "sampling_rate": "Sample Rate:",
         "calibrated": "Calibrated",
         "pending": "Pending",
         "ready": "Ready",
@@ -472,6 +474,7 @@ class Dashboard(QMainWindow):
             (t["ppg_signal"], "_lbl_ppg", "--"),
             (t["calibration"], "_lbl_calib", "-- / 8"),
             (t["window"], "_lbl_window", "--"),
+            (t["sampling_rate"], "_lbl_sample_rate", "-- Hz"),
         ]
         self._info_name_labels = []
         for row_idx, (label_text, attr_name, default) in enumerate(info_items):
@@ -578,6 +581,7 @@ class Dashboard(QMainWindow):
             "motion_calibrated": int(pkt.motion_calibrated),
             "timestamp": pkt.timestamp,
             "calib_progress": pkt.calib_progress,
+            "sampling_rate": pkt.sampling_rate,
         })
 
         # 心率数字
@@ -618,6 +622,7 @@ class Dashboard(QMainWindow):
             f"({t['calibrated'] if pkt.motion_calibrated else t['pending']})"
         )
         self._lbl_window.setText(t["ready"] if pkt.win_filled else t["filling"])
+        self._lbl_sample_rate.setText(f"{pkt.sampling_rate} Hz")
 
         # 趋势图
         self._trend_bpm.append(bpm)
@@ -690,6 +695,7 @@ class Dashboard(QMainWindow):
         self._lbl_ppg.setText("--")
         self._lbl_calib.setText("-- / 8")
         self._lbl_window.setText("--")
+        self._lbl_sample_rate.setText("-- Hz")
 
         # 重置状态栏
         self._status_label.setText(t["clear_confirm"])
@@ -717,6 +723,7 @@ class Dashboard(QMainWindow):
                 "time", "fused_bpm", "is_motion", "win_filled",
                 "hr_lms_hf", "hr_lms_acc", "hr_fft",
                 "ppg_mean", "motion_calibrated", "timestamp", "calib_progress",
+                "sampling_rate",
             ]
             with open(path, "w", newline="", encoding="utf-8-sig") as f:
                 writer = csv.DictWriter(f, fieldnames=fieldnames)
@@ -755,7 +762,7 @@ class Dashboard(QMainWindow):
         self._paths_card_title.setText(t["algorithm_paths"])
 
         # 信息标签名称
-        info_keys = ["ppg_signal", "calibration", "window"]
+        info_keys = ["ppg_signal", "calibration", "window", "sampling_rate"]
         for lbl, key in zip(self._info_name_labels, info_keys):
             lbl.setText(t[key])
 
@@ -801,6 +808,7 @@ class Dashboard(QMainWindow):
             motion_calibrated=t >= 8,
             timestamp=t,
             calib_progress=min(t, 8),
+            sampling_rate=125,
         )
         self.update_data(pkt)
 

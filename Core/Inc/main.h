@@ -98,13 +98,11 @@ void Error_Handler(void);
 #define CS_M_GPIO_Port GPIOB
 /* USER CODE BEGIN Private defines */
 
-// 工作模式宏定义
+// 工作模式常量定义
 #define MODE_HEART_RATE 0
 #define MODE_SPO2       1
 
-// 全局模式开关（修改此项后重新编译烧录即可切换模式）
-// 心率：MODE_HEART_RATE 血氧：MODE_SPO2
-#define CURRENT_WORK_MODE MODE_HEART_RATE
+// 注意: CURRENT_WORK_MODE 开关已移至 main.c 顶部，方便统一修改
 
 // 统一数据包长度为21字节
 #define PACKET_LEN 21

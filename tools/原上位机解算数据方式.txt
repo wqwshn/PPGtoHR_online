@@ -1,0 +1,149 @@
+心率版本：
+
+float64 range_ppg_num = 0;
+float64 range_acc_num = 0;
+int num_Uc1 = 0; int num_Uc2 = 0; int num_Ut1 = 0; int num_Ut2 = 0;
+int num_Accx = 0; int num_Accy = 0; int num_Accz = 0;
+float64 Uc1 = 0; float64 Uc2 = 0; float64 Ut1 = 0; float64 Ut2 = 0;
+float64 Accx = 0; float64 Accy = 0; float32 Accz = 0;
+
+float64 ppg1_1 = 0;
+float64 ppg2_1 = 0;
+float64 ppg_IR1 = 0;
+float64 ppg_IR2 = 0;
+
+range_ppg_num = -2048.0/262144.0; 
+range_acc_num = 4.0/32767.0;
+
+// --------------------------------------------------------
+// ADC 桥压与 MIMU 计算 (保持原样，索引 data[2]~data[12])
+// --------------------------------------------------------
+num_Uc1 = 65536*data[8] + 256*data[9]; Uc1 = num_Uc1/8388608.0*2.5; 
+num_Uc2 = 65536*data[6] + 256*data[7]; Uc2 = num_Uc2/8388608.0*2.5; 
+num_Ut1 = 65536*data[4] + 256*data[5]; Ut1 = num_Ut1/8388608.0*2.5; 
+num_Ut2 = 65536*data[2] + 256*data[3]; Ut2 = num_Ut2/8388608.0*2.5; 
+
+num_Accx = 256*data[10];
+if(num_Accx >= 32768) Accx = -(num_Accx-65536)*range_acc_num; else Accx = -num_Accx*range_acc_num;
+num_Accy = 256*data[11];
+if(num_Accy >= 32768) Accy = -(num_Accy-65536)*range_acc_num; else Accy = -num_Accy*range_acc_num;
+num_Accz = 256*data[12];
+if(num_Accz >= 32768) Accz = (num_Accz-65536)*range_acc_num;  else Accz = num_Accz*range_acc_num;
+
+// --------------------------------------------------------
+// PPG 处理部分 (19字节高精度无损方案)
+// --------------------------------------------------------
+// data[13]~data[15] 为绿光累加和 (24-bit)
+// data[16] 为参与累加的样本数
+float64 raw_sum = 65536.0 * data[13] + 256.0 * data[14] + data[15];
+float64 count = data[16];
+
+// 利用 PC 端的高精度浮点除法，找回所有微弱的分辨率细节
+float64 raw_green = raw_sum / count; 
+
+// 不再需要乘以 4，因为下位机透传了原始的 18-bit 精度
+ppg1_1 = raw_green * range_ppg_num + 1000;
+
+// 保持对外接口的稳定
+ppg2_1 = 0;
+ppg_IR1 = 0;
+ppg_IR2 = 0;
+
+血氧版本：
+float64 range_ppg_num = 0;
+float64 range_acc_num = 0;
+int num_Uc1 = 0;
+int num_Uc2 = 0;
+int num_Ut1 = 0;
+int num_Ut2 = 0;
+
+int num_Accx = 0;
+int num_Accy = 0;
+int num_Accz = 0;
+
+float64 Uc1 = 0;
+float64 Uc2 = 0;
+float64 Ut1 = 0;
+float64 Ut2 = 0;
+
+float64 Accx = 0;
+float64 Accy = 0;
+float32 Accz = 0;
+
+float64 ppg1_1 = 0;
+float64 ppg2_1 = 0;
+float64 ppg_IR1 = 0;
+float64 ppg_IR2 = 0;
+
+// === 新增：温度解算变量声明 ===
+int temp_int_raw = 0;
+float64 temp_frac = 0;
+float64 temp = 0;
+
+// 保持原有比例系数计算
+range_ppg_num = -2048.0/262144.0; 
+range_acc_num = 4.0/32767.0;
+
+// --------------------------------------------------------
+// ADC 桥压计算 (保持原样)
+// --------------------------------------------------------
+num_Uc1 = 65536*data[8] + 256*data[9];
+Uc1 = num_Uc1/8388608.0*2.5; 
+
+num_Uc2 = 65536*data[6] + 256*data[7];
+Uc2 = num_Uc2/8388608.0*2.5; 
+
+num_Ut1 = 65536*data[4] + 256*data[5];
+Ut1 = num_Ut1/8388608.0*2.5; 
+
+num_Ut2 = 65536*data[2] + 256*data[3];
+Ut2 = num_Ut2/8388608.0*2.5; 
+
+// --------------------------------------------------------
+// MIMU 加速度计算 (保持原样)
+// --------------------------------------------------------
+num_Accx = 256*data[10];
+if(num_Accx >= 32768)
+    Accx = -(num_Accx-65536)*range_acc_num;
+else
+    Accx = -num_Accx*range_acc_num;
+
+num_Accy = 256*data[11];
+if(num_Accy >= 32768)
+    Accy = -(num_Accy-65536)*range_acc_num;
+else
+    Accy = -num_Accy*range_acc_num;
+
+num_Accz = 256*data[12];
+if(num_Accz >= 32768)
+    Accz = (num_Accz-65536)*range_acc_num;
+else
+    Accz = num_Accz*range_acc_num;
+
+// --------------------------------------------------------
+// PPG 处理部分 
+// --------------------------------------------------------
+float64 raw_red = 256 * data[13] + data[14];
+ppg1_1 = 4 * raw_red * range_ppg_num + 1000;
+
+float64 raw_ir = 256 * data[15] + data[16];
+ppg_IR1 = 4 * raw_ir * range_ppg_num + 1000;
+
+// 未使用的通道置零
+ppg2_1 = 0;
+ppg_IR2 = 0;
+
+// --------------------------------------------------------
+// === 新增：MAX30101 温度及温升补偿解算 ===
+// --------------------------------------------------------
+// 1. 读取整数部分 data[17] 并处理 8 位补码（如果是负温度）
+temp_int_raw = data[17];
+if (temp_int_raw >= 128) {
+    temp_int_raw = temp_int_raw - 256;
+}
+
+// 2. 读取小数部分 data[18]，步进值为 0.0625 度
+temp_frac = data[18] * 0.0625;
+
+// 3. 计算最终结温 (包含查表所得的 2.4 度 LED 预估温升补偿)
+temp = temp_int_raw + temp_frac + 2.4;

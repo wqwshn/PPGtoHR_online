@@ -2,10 +2,10 @@
 /**
  * @brief            : ADC + MIMU + PPG 双模式采集程序 (支持心率/血氧切换)
  * @details          :
- * 1. 通过修改 CURRENT_WORK_MODE 宏定义切换工作模式
+ * 1. 通过修改 main.c 顶部配置开关切换工作模式和数据发送
  * 2. MAX30101使用FIFO异步采样模式，主循环批量读取并计算均值
  * 3. 心率模式：绿光单LED，血氧模式：红光+红外双LED
- * 4. 统一21字节数据包格式，支持温度补偿
+ * 4. 支持 1Hz HR 结果包和可选的 125Hz 原始数据包
  */
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
@@ -33,6 +33,21 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 #define BUFFER_SIZE 255
+
+/* ============================================================
+ * 系统配置开关 (修改后重新编译烧录即可生效)
+ * ============================================================ */
+
+/* 工作模式选择: 0=心率模式, 1=血氧模式 */
+#define CURRENT_WORK_MODE MODE_HEART_RATE
+
+/* 原始数据包发送开关 (125Hz, 21字节/包)
+ * 0 = 不发送原始数据 (仅发送 1Hz HR 结果包, 节省 ~2.5KB/s 带宽)
+ * 1 = 发送原始数据 (调试用, 完整传感器数据)
+ */
+#define ENABLE_RAW_DATA_PACKET 0
+
+/* ============================================================ */
 
 // PPG 数据起始索引 (2头 + 8ADC + 3ACC = 13)
 #define PPG_START_INDEX 13
@@ -261,8 +276,8 @@ int main(void)
     if (algorithm_initialized && hr_state.flag_1s_ready) {
         float bpm = HR_RunSolver(&hr_state);
         if (bpm > 0) {
-            /* 构建心率结果数据包 */
-            uint8_t hr_packet[20];
+            /* 构建心率结果数据包 (21 字节) */
+            uint8_t hr_packet[21];
             hr_packet[0] = 0xAA;       /* 帧头 */
             hr_packet[1] = 0xCC;
 
@@ -311,18 +326,21 @@ int main(void)
             hr_packet[15] = (ts >> 8) & 0xFF;
             hr_packet[16] = ts & 0xFF;
 
-            /* 校准状态字节 */
+            /* 校准进度 (0-8) */
             hr_packet[17] = (hr_state.calib_windows_done < 8) ? hr_state.calib_windows_done : 8;
 
-            /* XOR 校验 */
+            /* 采样率 (Hz) - 固定 125 */
+            hr_packet[18] = HR_FS;
+
+            /* XOR 校验 (覆盖 bytes[2..18]) */
             uint8_t xor_val = 0;
-            for (int i = 2; i < 18; i++) xor_val ^= hr_packet[i];
-            hr_packet[18] = xor_val;
+            for (int i = 2; i < 19; i++) xor_val ^= hr_packet[i];
+            hr_packet[19] = xor_val;
 
             /* 帧尾 */
-            hr_packet[19] = 0xCC;
+            hr_packet[20] = 0xCC;
 
-            HAL_UART_Transmit_DMA(&huart2, hr_packet, 20);
+            HAL_UART_Transmit_DMA(&huart2, hr_packet, 21);
         }
     }
 
@@ -438,7 +456,9 @@ int main(void)
       allData[20] = 0xCC;
 
       /* --- 6. DMA 发送 (21 字节) --- */
+#if (ENABLE_RAW_DATA_PACKET)
       HAL_UART_Transmit_DMA(&huart2, allData, PACKET_LEN);
+#endif
 
       /* --- 7. 清除标志位 --- */
       ADC_1to4Voltage_flag = 0;

@@ -123,7 +123,7 @@ L452CEU6_ALL_Cmake/
 | 19 | XOR Checksum | uint8 | 字节 2-18 的异或校验 |
 | 20 | Footer | uint8 | 0xCC |
 
-### 心率结果包 (20 字节 @ 1Hz)
+### 心率结果包 (21 字节 @ 1Hz)
 
 | 偏移 | 字段 | 类型 | 描述 |
 |------|------|------|------|
@@ -138,8 +138,9 @@ L452CEU6_ALL_Cmake/
 | 14 | Calibrated | uint8 | 校准状态 |
 | 15-16 | Timestamp | uint16 | 秒计数器 |
 | 17 | Cal Progress | uint8 | 校准进度 (0-8) |
-| 18 | XOR Checksum | uint8 | 字节 2-17 的异或校验 |
-| 19 | Footer | uint8 | 0xCC |
+| 18 | Sampling Rate | uint8 | 采样率 (固定 125) |
+| 19 | XOR Checksum | uint8 | 字节 2-18 的异或校验 |
+| 20 | Footer | uint8 | 0xCC |
 
 ## 资源占用
 
@@ -214,7 +215,8 @@ python main.py --simulate
 - 三路算法路径 BPM 对比 (LMS-HF, LMS-ACC, FFT)
 - 60 秒趋势曲线
 - 运动状态指示
-- 数据导出 CSV
+- 采样率显示 (125Hz)
+- 数据导出 CSV (含采样率字段)
 - 中/英文切换
 - 模拟模式 (调试用)
 
@@ -240,7 +242,7 @@ python main.py --simulate
     |
     +-- 1Hz 算法就绪?
         +-- HR_RunSolver() 14 步流水线
-        +-- 构建 20 字节 HR 结果包
+        +-- 构建 21 字节 HR 结果包
         +-- DMA 发送 HR 结果包
 ```
 

@@ -51,7 +51,7 @@ void HR_GetDefaultConfig(HR_Config_t *config)
     config->Slew_Limit_Rest_BPM= 8.0f;
     config->Slew_Step_Rest_BPM = 1.0f;
     config->Motion_Th_Scale    = 3.0f;
-    config->Default_Motion_Th  = 200.0f;
+    config->Default_Motion_Th  = 0.07f;  /* 基于实测: 静息 0.06-0.07g */
     config->Spec_Penalty_Enable = 1;
 }
 
@@ -75,12 +75,12 @@ void HR_Init(const HR_Config_t *config, HR_State_t *state)
     }
 
     /* --- 初始化 5 个 IIR biquad 滤波器实例 --- */
-    /* 每个通道: 2 个 biquad 节, 使用预计算的 HR_BPF_COEFFS 系数 */
-    arm_biquad_cascade_df1_init_f32(&state->biquad_ppg,  2, (float *)HR_BPF_COEFFS, state->iir_state_ppg);
-    arm_biquad_cascade_df1_init_f32(&state->biquad_accx, 2, (float *)HR_BPF_COEFFS, state->iir_state_accx);
-    arm_biquad_cascade_df1_init_f32(&state->biquad_accy, 2, (float *)HR_BPF_COEFFS, state->iir_state_accy);
-    arm_biquad_cascade_df1_init_f32(&state->biquad_accz, 2, (float *)HR_BPF_COEFFS, state->iir_state_accz);
-    arm_biquad_cascade_df1_init_f32(&state->biquad_hf,   2, (float *)HR_BPF_COEFFS, state->iir_state_hf);
+    /* 每个通道: 4 个 biquad 节, 使用预计算的 HR_BPF_COEFFS 系数 */
+    arm_biquad_cascade_df1_init_f32(&state->biquad_ppg,  4, (float *)HR_BPF_COEFFS, state->iir_state_ppg);
+    arm_biquad_cascade_df1_init_f32(&state->biquad_accx, 4, (float *)HR_BPF_COEFFS, state->iir_state_accx);
+    arm_biquad_cascade_df1_init_f32(&state->biquad_accy, 4, (float *)HR_BPF_COEFFS, state->iir_state_accy);
+    arm_biquad_cascade_df1_init_f32(&state->biquad_accz, 4, (float *)HR_BPF_COEFFS, state->iir_state_accz);
+    arm_biquad_cascade_df1_init_f32(&state->biquad_hf,   4, (float *)HR_BPF_COEFFS, state->iir_state_hf);
 
     /* --- 初始化 LMS HF 路径: 2 级级联 --- */
     for (i = 0; i < HR_LMS_CASCADE_HF; i++) {
@@ -113,8 +113,8 @@ void HR_Init(const HR_Config_t *config, HR_State_t *state)
     state->hr_fft     = 1.2f;
     state->hr_fused   = 1.2f;
 
-    /* --- 运动阈值初始化 --- */
-    state->motion_threshold = s_config.Default_Motion_Th;
+    /* --- 运动阈值初始化 (g 值转换为 LSB) --- */
+    state->motion_threshold = s_config.Default_Motion_Th * HR_ACC_LSB_PER_G;
 }
 
 /* ============================================================
@@ -308,18 +308,20 @@ float HR_RunSolver(HR_State_t *state)
             }
         }
 
-        /* 计算幅值的标准差 */
+        /* 计算幅值的标准差 (LSB 单位) */
         arm_std_f32(state->scratch_a, HR_WIN_SAMPLES, &acc_std);
 
         /* 自适应校准逻辑 */
         if (!state->motion_calibrated) {
-            if (acc_std < s_config.Default_Motion_Th) {
+            /* 将默认阈值 (g 值) 转换为 LSB 进行比较 */
+            float motion_th_lsb = s_config.Default_Motion_Th * HR_ACC_LSB_PER_G;
+            if (acc_std < motion_th_lsb) {
                 /* 静息窗口: 累积标准差用于计算基线 */
                 state->calib_std_accum += acc_std;
                 state->calib_windows_done++;
 
                 if (state->calib_windows_done >= 8) {
-                    /* 计算平均静息标准差作为基线 */
+                    /* 计算平均静息标准差作为基线 (LSB) */
                     state->acc_baseline_std = state->calib_std_accum / (float)state->calib_windows_done;
                     /* 阈值 = 基线 x 倍数 */
                     state->motion_threshold = state->acc_baseline_std * s_config.Motion_Th_Scale;
