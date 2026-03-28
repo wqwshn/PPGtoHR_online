@@ -163,6 +163,10 @@ typedef struct {
 
     /* --- 窗口计数器 --- */
     uint16_t win_count;             /* 已处理的窗口步数 */
+
+    /* --- LMS 收敛性保护 --- */
+    uint16_t prev_order_hf;         /* 上一次 HF 路径 LMS 阶数 */
+    uint16_t prev_order_acc;        /* 上一次 ACC 路径 LMS 阶数 */
 } HR_State_t;
 
 /* ============================================================

@@ -405,22 +405,36 @@ float HR_RunSolver(HR_State_t *state)
             order_acc = HR_MAX_ORDER;
         }
 
-        /* 重新初始化 LMS 滤波器以应用新阶数 */
-        for (uint8_t i = 0; i < HR_LMS_CASCADE_HF; i++) {
-            LMS_Init(&state->lms_hf[i],
-                     state->lms_hf_coeffs[i],
-                     state->lms_hf_state[i],
-                     order_hf,
-                     s_config.LMS_Mu_Base,
-                     HR_WIN_SAMPLES);
-        }
-        for (uint8_t i = 0; i < HR_LMS_CASCADE_ACC; i++) {
-            LMS_Init(&state->lms_acc[i],
-                     state->lms_acc_coeffs[i],
-                     state->lms_acc_state[i],
-                     order_acc,
-                     s_config.LMS_Mu_Base,
-                     HR_WIN_SAMPLES);
+        /* 条件性 LMS 初始化: 仅在首次运行或阶数变化时重置, 保留系数以维持收敛 */
+        {
+            uint8_t need_reinit_hf = (state->win_count == HR_WIN_SEC) ||
+                                     (order_hf != state->prev_order_hf);
+            uint8_t need_reinit_acc = (state->win_count == HR_WIN_SEC) ||
+                                      (order_acc != state->prev_order_acc);
+
+            if (need_reinit_hf) {
+                for (uint8_t i = 0; i < HR_LMS_CASCADE_HF; i++) {
+                    LMS_Init(&state->lms_hf[i],
+                             state->lms_hf_coeffs[i],
+                             state->lms_hf_state[i],
+                             order_hf,
+                             s_config.LMS_Mu_Base,
+                             HR_WIN_SAMPLES);
+                }
+                state->prev_order_hf = order_hf;
+            }
+
+            if (need_reinit_acc) {
+                for (uint8_t i = 0; i < HR_LMS_CASCADE_ACC; i++) {
+                    LMS_Init(&state->lms_acc[i],
+                             state->lms_acc_coeffs[i],
+                             state->lms_acc_state[i],
+                             order_acc,
+                             s_config.LMS_Mu_Base,
+                             HR_WIN_SAMPLES);
+                }
+                state->prev_order_acc = order_acc;
+            }
         }
 
         /* ======================================================
