@@ -22,8 +22,8 @@ void LMS_Init(arm_lms_norm_instance_f32 *inst,
     uint32_t state_len = (uint32_t)num_taps + block_size - 1U;
     memset(state, 0, state_len * sizeof(float));
 
-    /* 调用 CMSIS-DSP 初始化 */
-    arm_lms_norm_init_f32(inst, num_taps, coeffs, state, mu);
+    /* 调用 CMSIS-DSP 初始化 (blockSize 在处理时由 arm_lms_norm_f32 使用) */
+    arm_lms_norm_init_f32(inst, num_taps, coeffs, state, mu, block_size);
 }
 
 /* ============================================================

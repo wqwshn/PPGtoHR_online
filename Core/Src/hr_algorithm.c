@@ -299,7 +299,14 @@ float HR_RunSolver(HR_State_t *state)
         /* scratch_a += az^2 */
         arm_add_f32(state->scratch_a, state->scratch_b, state->scratch_a, HR_WIN_SAMPLES);
         /* scratch_a = sqrt(scratch_a) = 幅值 */
-        arm_sqrt_f32(state->scratch_a, state->scratch_a, HR_WIN_SAMPLES);
+        {
+            uint16_t _si;
+            for (_si = 0; _si < HR_WIN_SAMPLES; _si++) {
+                float _v = state->scratch_a[_si];
+                if (_v < 0.0f) _v = 0.0f;
+                state->scratch_a[_si] = sqrtf(_v);
+            }
+        }
 
         /* 计算幅值的标准差 */
         arm_std_f32(state->scratch_a, HR_WIN_SAMPLES, &acc_std);
