@@ -256,8 +256,68 @@ int main(void)
     if (algorithm_initialized && hr_state.flag_1s_ready) {
         float bpm = HR_RunSolver(&hr_state);
         if (bpm > 0) {
-            /* 调试输出: 通过 UART 发送心率结果 */
-            /* 将在 Task 7 中实现完整的协议包 */
+            /* 构建心率结果数据包 */
+            uint8_t hr_packet[22];
+            hr_packet[0] = 0xAA;       /* 帧头 */
+            hr_packet[1] = 0xCC;
+
+            /* 融合心率 (x10, 0.1 BPM 精度) */
+            uint16_t hr_x10 = (uint16_t)(bpm * 10.0f + 0.5f);
+            hr_packet[2] = (hr_x10 >> 8) & 0xFF;
+            hr_packet[3] = hr_x10 & 0xFF;
+
+            /* 运动标志 */
+            hr_packet[4] = hr_state.is_motion;
+
+            /* 窗口填充状态 */
+            hr_packet[5] = hr_state.win_filled;
+
+            /* LMS-HF 路径 BPM (x10) */
+            uint16_t hf_x10 = (uint16_t)(hr_state.hr_lms_hf * 600.0f + 0.5f);
+            hr_packet[6] = (hf_x10 >> 8) & 0xFF;
+            hr_packet[7] = hf_x10 & 0xFF;
+
+            /* LMS-ACC 路径 BPM (x10) */
+            uint16_t acc_x10 = (uint16_t)(hr_state.hr_lms_acc * 600.0f + 0.5f);
+            hr_packet[8] = (acc_x10 >> 8) & 0xFF;
+            hr_packet[9] = acc_x10 & 0xFF;
+
+            /* FFT 路径 BPM (x10) */
+            uint16_t fft_x10 = (uint16_t)(hr_state.hr_fft * 600.0f + 0.5f);
+            hr_packet[10] = (fft_x10 >> 8) & 0xFF;
+            hr_packet[11] = fft_x10 & 0xFF;
+
+            /* PPG 信号均值 (窗口第一个通道的平均值, 用于信号强度) */
+            /* 使用 buf_1s_ppg 的均值作为信号强度参考 */
+            float ppg_mean = 0;
+            for (int i = 0; i < HR_STEP_SAMPLES; i++) ppg_mean += hr_state.buf_1s_ppg[i];
+            ppg_mean /= HR_STEP_SAMPLES;
+            uint16_t ppg_u16 = (uint16_t)(ppg_mean + 0.5f);
+            hr_packet[12] = (ppg_u16 >> 8) & 0xFF;
+            hr_packet[13] = ppg_u16 & 0xFF;
+
+            /* ACC 幅值 std (x100) */
+            /* 运动检测中已计算, 这里简化: 直接从 motion threshold 判断 */
+            hr_packet[14] = hr_state.motion_calibrated;
+
+            /* 时间戳 (秒, 低16位) */
+            static uint16_t ts = 0;
+            ts++;
+            hr_packet[15] = (ts >> 8) & 0xFF;
+            hr_packet[16] = ts & 0xFF;
+
+            /* 校准状态字节 */
+            hr_packet[17] = (hr_state.calib_windows_done < 8) ? hr_state.calib_windows_done : 8;
+
+            /* XOR 校验 */
+            uint8_t xor_val = 0;
+            for (int i = 2; i < 18; i++) xor_val ^= hr_packet[i];
+            hr_packet[18] = xor_val;
+
+            /* 帧尾 */
+            hr_packet[19] = 0xCC;
+
+            HAL_UART_Transmit_DMA(&huart2, hr_packet, 20);
         }
     }
 
