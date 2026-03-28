@@ -75,13 +75,14 @@ uint8_t Utop_times2 = 5;
 static uint32_t last_red_avg = 0;
 static uint32_t last_ir_avg = 0;
 #else
-// 心率模式变量
-static uint32_t last_avg_green = 0;
+// 心率模式无额外缓存变量 (sum_green 直接计算, 无需缓存上次均值)
 #endif
 
-/* 温度补偿相关 - 1Hz非阻塞测温状态机 */
+/* 温度补偿相关 - 1Hz非阻塞测温状态机 (仅 SpO2 模式使用) */
+#if (CURRENT_WORK_MODE == MODE_SPO2)
 static uint8_t die_temp_int = 0;
 static uint8_t die_temp_frac = 0;
+#endif
 
 /* --- 在线心率算法相关 --- */
 static HR_Config_t hr_config;
@@ -92,11 +93,15 @@ static uint8_t algorithm_initialized = 0;
 uint8_t CheckXOR(uint8_t *Buf, uint8_t Len);
 
 // PPG配置函数
+#if (CURRENT_WORK_MODE == MODE_SPO2)
 static void PPG_Config_SpO2_Hardcoded(void);
+#endif
 static void PPG_Config_Green_Hardcoded(void);
 
-// 蓝牙初始化函数
+// 蓝牙初始化函数 (当前未启用, 保留待用)
+#if 0
 static void BLE_Init(void);
+#endif
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -125,8 +130,8 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
-  uint8_t ADCbuff[] = "ADC ERROR!";
-  uint8_t MIMUbuff[] = "MIMU ERROR!";
+  char ADCbuff[] = "ADC ERROR!";
+  char MIMUbuff[] = "MIMU ERROR!";
   /* USER CODE END Init */
 
   /* Configure the system clock */
@@ -180,7 +185,7 @@ int main(void)
 
   /* 2. ADC 检测 (阻塞式) */
   while (!ADC_check()) {
-      HAL_UART_Transmit(&huart2, ADCbuff, sizeof(ADCbuff), 100);
+      HAL_UART_Transmit(&huart2, (uint8_t*)ADCbuff, sizeof(ADCbuff), 100);
       HAL_UART_Transmit(&huart2, (uint8_t*)"\r\n", 2, 100);
       HAL_Delay(500);
   }
@@ -189,7 +194,7 @@ int main(void)
 
   /* 3. MIMU 检测 (阻塞式) */
   while (!MIMU_check()) {
-      HAL_UART_Transmit(&huart2, MIMUbuff, sizeof(MIMUbuff), 100);
+      HAL_UART_Transmit(&huart2, (uint8_t*)MIMUbuff, sizeof(MIMUbuff), 100);
       HAL_Delay(500);
   }
   HAL_UART_Transmit(&huart2, (uint8_t*)"DEBUG: MIMU Found!\r\n", 20, 100);
@@ -257,7 +262,7 @@ int main(void)
         float bpm = HR_RunSolver(&hr_state);
         if (bpm > 0) {
             /* 构建心率结果数据包 */
-            uint8_t hr_packet[22];
+            uint8_t hr_packet[20];
             hr_packet[0] = 0xAA;       /* 帧头 */
             hr_packet[1] = 0xCC;
 
@@ -494,7 +499,8 @@ void SystemClock_Config(void)
 
 /* USER CODE BEGIN 4 */
 
-// 蓝牙初始化
+// 蓝牙初始化 (当前未启用, 需要时移除 #if 0 守卫)
+#if 0
 static void BLE_Init(void)
 {
     static const uint8_t CMD_WAKE[]     = "<ST_WAKE=FOREVER>";
@@ -539,6 +545,7 @@ static void BLE_Init(void)
     HAL_UART_Transmit(&huart2, CMD_MIN_GAP, sizeof(CMD_MIN_GAP)-1, 0xFFFF);
     HAL_Delay(50);
 }
+#endif /* BLE_Init 守卫结束 */
 
 // 校验函数
 uint8_t CheckXOR(uint8_t *Buf, uint8_t Len)
@@ -552,7 +559,8 @@ uint8_t CheckXOR(uint8_t *Buf, uint8_t Len)
   return x;
 }
 
-// PPG 血氧模式硬编码配置
+// PPG 血氧模式硬编码配置 (仅 SpO2 模式编译)
+#if (CURRENT_WORK_MODE == MODE_SPO2)
 static void PPG_Config_SpO2_Hardcoded(void)
 {
     // --- 1. 工作模式配置 (血氧模式) ---
@@ -577,6 +585,7 @@ static void PPG_Config_SpO2_Hardcoded(void)
     MAX_WriteOneByte(OVF_COUNTER_REG, 0x00);
     MAX_WriteOneByte(FIFO_RD_PTR_REG, 0x00);
 }
+#endif /* MODE_SPO2 守卫结束 */
 
 // PPG 绿光心率模式硬编码配置
 static void PPG_Config_Green_Hardcoded(void)

@@ -104,7 +104,7 @@ void Error_Handler(void);
 
 // 全局模式开关（修改此项后重新编译烧录即可切换模式）
 // 心率：MODE_HEART_RATE 血氧：MODE_SPO2
-#define CURRENT_WORK_MODE MODE_SPO2
+#define CURRENT_WORK_MODE MODE_HEART_RATE
 
 // 统一数据包长度为21字节
 #define PACKET_LEN 21
