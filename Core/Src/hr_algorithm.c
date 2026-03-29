@@ -298,13 +298,11 @@ float HR_RunSolver(HR_State_t *state)
         arm_mult_f32(state->win_accz, state->win_accz, state->scratch_b, HR_WIN_SAMPLES);
         /* scratch_a += az^2 */
         arm_add_f32(state->scratch_a, state->scratch_b, state->scratch_a, HR_WIN_SAMPLES);
-        /* scratch_a = sqrt(scratch_a) = 幅值 */
+        /* scratch_a = sqrt(scratch_a) = 幅值 (输入恒 >= 0: ax^2+ay^2+az^2) */
         {
             uint16_t _si;
             for (_si = 0; _si < HR_WIN_SAMPLES; _si++) {
-                float _v = state->scratch_a[_si];
-                if (_v < 0.0f) _v = 0.0f;
-                state->scratch_a[_si] = sqrtf(_v);
+                state->scratch_a[_si] = sqrtf(state->scratch_a[_si]);
             }
         }
 
@@ -470,43 +468,34 @@ float HR_RunSolver(HR_State_t *state)
                                state->lms_hf_tmp2,
                                HR_WIN_SAMPLES);
 
-            /* 对 LMS-HF 误差输出做 FFT 峰值检测 */
-            DSP_FFTPeaks(state->lms_hf_err, HR_WIN_SAMPLES,
-                         state->fft_input, state->fft_output,
-                         (float)HR_FS, 0.3f,
-                         state->peak_freqs, state->peak_amps,
-                         HR_MAX_PEAKS, &num_peaks_hf);
-
-            /* 频谱惩罚: 用 HF 信号的 FFT 峰值获取运动频率 */
-            if (s_config.Spec_Penalty_Enable && num_peaks_hf > 0) {
-                /* 从 HF 参考信号的 FFT 获取运动主频 */
+            /* 先从参考信号 FFT 获取运动主频 (先做参考 FFT, 避免覆盖主信号峰值) */
+            motion_freq_hf = 0.0f;
+            if (s_config.Spec_Penalty_Enable) {
                 uint16_t num_ref_peaks;
                 DSP_FFTPeaks(state->scratch_b, HR_WIN_SAMPLES,
                              state->fft_input, state->fft_output,
                              (float)HR_FS, 0.3f,
                              state->peak_freqs, state->peak_amps,
                              HR_MAX_PEAKS, &num_ref_peaks);
-
-                motion_freq_hf = 0.0f;
                 if (num_ref_peaks > 0) {
                     motion_freq_hf = state->peak_freqs[0]; /* 最强峰 = 运动频率 */
                 }
+            }
 
-                /* 重新对 LMS-HF 误差输出做 FFT 峰值检测 (因 scratch 被覆盖) */
-                DSP_FFTPeaks(state->lms_hf_err, HR_WIN_SAMPLES,
-                             state->fft_input, state->fft_output,
-                             (float)HR_FS, 0.3f,
-                             state->peak_freqs, state->peak_amps,
-                             HR_MAX_PEAKS, &num_peaks_hf);
+            /* 对 LMS-HF 误差输出做 FFT 峰值检测 (此时 peak_freqs/peak_amps 专用于主信号) */
+            DSP_FFTPeaks(state->lms_hf_err, HR_WIN_SAMPLES,
+                         state->fft_input, state->fft_output,
+                         (float)HR_FS, 0.3f,
+                         state->peak_freqs, state->peak_amps,
+                         HR_MAX_PEAKS, &num_peaks_hf);
 
-                /* 对运动频率及二次谐波附近峰值施加惩罚 */
-                if (motion_freq_hf > 0.0f) {
-                    DSP_SpectrumPenalty(state->peak_freqs, state->peak_amps,
-                                       num_peaks_hf,
-                                       motion_freq_hf,
-                                       s_config.Spec_Penalty_Width,
-                                       s_config.Spec_Penalty_Weight);
-                }
+            /* 频谱惩罚: 对运动频率及二次谐波附近峰值施加惩罚 */
+            if (motion_freq_hf > 0.0f && num_peaks_hf > 0) {
+                DSP_SpectrumPenalty(state->peak_freqs, state->peak_amps,
+                                   num_peaks_hf,
+                                   motion_freq_hf,
+                                   s_config.Spec_Penalty_Width,
+                                   s_config.Spec_Penalty_Weight);
             }
 
             /* 按幅值降序排列峰值 */
@@ -562,42 +551,34 @@ float HR_RunSolver(HR_State_t *state)
                                state->lms_acc_tmp2,
                                HR_WIN_SAMPLES);
 
-            /* 对 LMS-ACC 误差输出做 FFT 峰值检测 */
-            DSP_FFTPeaks(state->lms_acc_err, HR_WIN_SAMPLES,
-                         state->fft_input, state->fft_output,
-                         (float)HR_FS, 0.3f,
-                         state->peak_freqs, state->peak_amps,
-                         HR_MAX_PEAKS, &num_peaks_acc);
-
-            /* 频谱惩罚: 用 ACC 参考信号的 FFT 峰值获取运动频率 */
-            if (s_config.Spec_Penalty_Enable && num_peaks_acc > 0) {
+            /* 先从参考信号 FFT 获取运动主频 (先做参考 FFT, 避免覆盖主信号峰值) */
+            motion_freq_acc = 0.0f;
+            if (s_config.Spec_Penalty_Enable) {
                 uint16_t num_ref_peaks;
                 DSP_FFTPeaks(state->scratch_b, HR_WIN_SAMPLES,
                              state->fft_input, state->fft_output,
                              (float)HR_FS, 0.3f,
                              state->peak_freqs, state->peak_amps,
                              HR_MAX_PEAKS, &num_ref_peaks);
-
-                motion_freq_acc = 0.0f;
                 if (num_ref_peaks > 0) {
-                    motion_freq_acc = state->peak_freqs[0];
+                    motion_freq_acc = state->peak_freqs[0]; /* 最强峰 = 运动频率 */
                 }
+            }
 
-                /* 重新对 LMS-ACC 误差输出做 FFT 峰值检测 */
-                DSP_FFTPeaks(state->lms_acc_err, HR_WIN_SAMPLES,
-                             state->fft_input, state->fft_output,
-                             (float)HR_FS, 0.3f,
-                             state->peak_freqs, state->peak_amps,
-                             HR_MAX_PEAKS, &num_peaks_acc);
+            /* 对 LMS-ACC 误差输出做 FFT 峰值检测 (此时 peak_freqs/peak_amps 专用于主信号) */
+            DSP_FFTPeaks(state->lms_acc_err, HR_WIN_SAMPLES,
+                         state->fft_input, state->fft_output,
+                         (float)HR_FS, 0.3f,
+                         state->peak_freqs, state->peak_amps,
+                         HR_MAX_PEAKS, &num_peaks_acc);
 
-                /* 频谱惩罚 */
-                if (motion_freq_acc > 0.0f) {
-                    DSP_SpectrumPenalty(state->peak_freqs, state->peak_amps,
-                                       num_peaks_acc,
-                                       motion_freq_acc,
-                                       s_config.Spec_Penalty_Width,
-                                       s_config.Spec_Penalty_Weight);
-                }
+            /* 频谱惩罚: 对运动频率及二次谐波附近峰值施加惩罚 */
+            if (motion_freq_acc > 0.0f && num_peaks_acc > 0) {
+                DSP_SpectrumPenalty(state->peak_freqs, state->peak_amps,
+                                   num_peaks_acc,
+                                   motion_freq_acc,
+                                   s_config.Spec_Penalty_Width,
+                                   s_config.Spec_Penalty_Weight);
             }
 
             /* 按幅值降序排列峰值 */
@@ -619,6 +600,7 @@ float HR_RunSolver(HR_State_t *state)
      */
     {
         float mean_val;
+        float motion_freq_fft;
         uint16_t num_peaks_fft;
 
         /* 将滤波后 PPG 拷贝到 scratch_a (作为 FFT 输入源) */
@@ -634,43 +616,34 @@ float HR_RunSolver(HR_State_t *state)
         /* 注意: DSP_FFTPeaks 内部会 memset(fft_input, 0) 再 memcpy(signal -> fft_input),
          * 因此 signal 不能指向 fft_input 自身, 必须使用独立缓冲区 (scratch_a). */
 
-        /* FFT 峰值检测 */
+        /* 先从参考信号 FFT 获取运动主频 (使用 ACC Z 轴作为参考) */
+        motion_freq_fft = 0.0f;
+        if (s_config.Spec_Penalty_Enable) {
+            uint16_t num_ref_peaks;
+            DSP_FFTPeaks(state->filt_accz, HR_WIN_SAMPLES,
+                         state->fft_input, state->fft_output,
+                         (float)HR_FS, 0.3f,
+                         state->peak_freqs, state->peak_amps,
+                         HR_MAX_PEAKS, &num_ref_peaks);
+            if (num_ref_peaks > 0) {
+                motion_freq_fft = state->peak_freqs[0]; /* 最强峰 = 运动频率 */
+            }
+        }
+
+        /* 对 PPG 信号做 FFT 峰值检测 (此时 peak_freqs/peak_amps 专用于主信号) */
         DSP_FFTPeaks(state->scratch_a, HR_WIN_SAMPLES,
                      state->fft_input, state->fft_output,
                      (float)HR_FS, 0.3f,
                      state->peak_freqs, state->peak_amps,
                      HR_MAX_PEAKS, &num_peaks_fft);
 
-        /* 频谱惩罚: 使用 ACC Z 轴作为参考 */
-        if (s_config.Spec_Penalty_Enable && num_peaks_fft > 0) {
-            float motion_freq_fft;
-            uint16_t num_ref_peaks;
-
-            DSP_FFTPeaks(state->filt_accz, HR_WIN_SAMPLES,
-                         state->fft_input, state->fft_output,
-                         (float)HR_FS, 0.3f,
-                         state->peak_freqs, state->peak_amps,
-                         HR_MAX_PEAKS, &num_ref_peaks);
-
-            motion_freq_fft = 0.0f;
-            if (num_ref_peaks > 0) {
-                motion_freq_fft = state->peak_freqs[0];
-            }
-
-            /* 重新对 PPG FFT 做峰值检测 (因 scratch_a 可能被其他路径覆盖, 使用 fft_input 中已填充的数据) */
-            DSP_FFTPeaks(state->scratch_a, HR_WIN_SAMPLES,
-                         state->fft_input, state->fft_output,
-                         (float)HR_FS, 0.3f,
-                         state->peak_freqs, state->peak_amps,
-                         HR_MAX_PEAKS, &num_peaks_fft);
-
-            if (motion_freq_fft > 0.0f) {
-                DSP_SpectrumPenalty(state->peak_freqs, state->peak_amps,
-                                   num_peaks_fft,
-                                   motion_freq_fft,
-                                   s_config.Spec_Penalty_Width,
-                                   s_config.Spec_Penalty_Weight);
-            }
+        /* 频谱惩罚: 对运动频率及二次谐波附近峰值施加惩罚 */
+        if (motion_freq_fft > 0.0f && num_peaks_fft > 0) {
+            DSP_SpectrumPenalty(state->peak_freqs, state->peak_amps,
+                               num_peaks_fft,
+                               motion_freq_fft,
+                               s_config.Spec_Penalty_Width,
+                               s_config.Spec_Penalty_Weight);
         }
 
         /* 按幅值降序排列 */
@@ -686,11 +659,14 @@ float HR_RunSolver(HR_State_t *state)
     /* ======================================================
      * Step 11: 融合决策
      * ======================================================
-     * 运动状态: 选择 LMS-ACC 路径 (运动伪影消除效果好)
+     * 运动状态: 选择 LMS-HF 路径 (HF 桥顶信号 Ut1/Ut2 作为参考,
+     *           自适应滤波消除运动伪影效果最优)
      * 静息状态: 选择 Pure-FFT 路径 (信号干净, FFT 精度高)
+     *
+     * 注: LMS-ACC 和 FFT 路径始终计算并保留, 作为底线对比参考.
      */
     if (state->is_motion) {
-        state->hr_fused = state->hr_lms_acc;
+        state->hr_fused = state->hr_lms_hf;
     } else {
         state->hr_fused = state->hr_fft;
     }
@@ -700,12 +676,13 @@ float HR_RunSolver(HR_State_t *state)
      * ======================================================
      * 对心率历史做中值滤波平滑, 抑制突变.
      * 将当前融合心率写入环形历史缓冲区.
+     * 平滑时跟随融合决策: 运动段平滑 HF 历史, 静息段平滑 FFT 历史.
      */
     {
         float smoothed;
         uint16_t hist_len;
 
-        /* 将融合心率写入历史 (环形缓冲区) */
+        /* 将三路心率写入历史 (环形缓冲区, 始终记录) */
         state->hr_history_lms_hf[state->hr_history_idx]  = state->hr_lms_hf;
         state->hr_history_lms_acc[state->hr_history_idx] = state->hr_lms_acc;
         state->hr_history_fft[state->hr_history_idx]     = state->hr_fft;
@@ -722,9 +699,14 @@ float HR_RunSolver(HR_State_t *state)
             hist_len = HR_HR_HISTORY_LEN;
         }
 
-        /* 中值平滑 */
-        DSP_MedianSmooth(state->hr_history_fft, hist_len,
-                         HR_SMOOTH_WIN, &smoothed);
+        /* 中值平滑: 跟随融合路径选择对应历史 */
+        if (state->is_motion) {
+            DSP_MedianSmooth(state->hr_history_lms_hf, hist_len,
+                             HR_SMOOTH_WIN, &smoothed);
+        } else {
+            DSP_MedianSmooth(state->hr_history_fft, hist_len,
+                             HR_SMOOTH_WIN, &smoothed);
+        }
 
         /* 用平滑后的值替换融合心率 */
         state->hr_fused = smoothed;

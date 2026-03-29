@@ -41,9 +41,9 @@
 /* 工作模式选择: 0=心率模式, 1=血氧模式 */
 #define CURRENT_WORK_MODE MODE_HEART_RATE
 
-/* 原始数据包发送开关 (125Hz, 21字节/包)
- * 0 = 不发送原始数据 (仅发送 1Hz HR 结果包, 节省 ~2.5KB/s 带宽)
- * 1 = 发送原始数据 (调试用, 完整传感器数据)
+/* 数据发送模式选择 (两种模式互斥, 不会同时发送)
+ * 0 = 在线心率模式: 运行算法, 仅发送 1Hz HR 结果包 (0xAA 0xCC)
+ * 1 = 原始数据模式: 仅发送 125Hz 原始数据包 (0xAA 0xBB), 不运行算法
  */
 #define ENABLE_RAW_DATA_PACKET 0
 
@@ -244,12 +244,14 @@ int main(void)
 #endif
 
   /* ====================================================================
-   * 心率在线算法初始化
+   * 心率在线算法初始化 (仅在线心率模式)
    * ==================================================================== */
+#if (!ENABLE_RAW_DATA_PACKET)
   HR_GetDefaultConfig(&hr_config);
   HR_Init(&hr_config, &hr_state);
   algorithm_initialized = 1;
   HAL_UART_Transmit(&huart2, (uint8_t*)"DEBUG: HR Algorithm Init OK\r\n", 29, 1000);
+#endif
 
   /* ====================================================================
    * 系统准备就绪
@@ -272,7 +274,8 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    /* ---- 心率算法: 每秒执行一次解算 ---- */
+#if (!ENABLE_RAW_DATA_PACKET)
+    /* ---- 在线心率模式: 每秒执行一次解算并发送 HR 结果包 ---- */
     if (algorithm_initialized && hr_state.flag_1s_ready) {
         float bpm = HR_RunSolver(&hr_state);
         if (bpm > 0) {
@@ -308,7 +311,6 @@ int main(void)
             hr_packet[11] = fft_x10 & 0xFF;
 
             /* PPG 信号均值 (窗口第一个通道的平均值, 用于信号强度) */
-            /* 使用 buf_1s_ppg 的均值作为信号强度参考 */
             float ppg_mean = 0;
             for (int i = 0; i < HR_STEP_SAMPLES; i++) ppg_mean += hr_state.buf_1s_ppg[i];
             ppg_mean /= HR_STEP_SAMPLES;
@@ -316,8 +318,7 @@ int main(void)
             hr_packet[12] = (ppg_u16 >> 8) & 0xFF;
             hr_packet[13] = ppg_u16 & 0xFF;
 
-            /* ACC 幅值 std (x100) */
-            /* 运动检测中已计算, 这里简化: 直接从 motion threshold 判断 */
+            /* 运动校准状态 */
             hr_packet[14] = hr_state.motion_calibrated;
 
             /* 时间戳 (秒, 低16位) */
@@ -343,6 +344,7 @@ int main(void)
             HAL_UART_Transmit_DMA(&huart2, hr_packet, 21);
         }
     }
+#endif /* !ENABLE_RAW_DATA_PACKET */
 
     /* ---- 数据采集: ADC 完成后触发 ---- */
     if(ADC_1to4Voltage_flag == 4){
@@ -428,7 +430,8 @@ int main(void)
       allData[PPG_START_INDEX + 2] =  sum_green        & 0xFF;
       allData[PPG_START_INDEX + 3] = sample_count;
 
-      /* 算法数据: 推送 float 采样点 */
+      /* 算法数据: 推送 float 采样点 (仅在线心率模式) */
+#if (!ENABLE_RAW_DATA_PACKET)
       if (algorithm_initialized && sample_count > 0) {
           float ppg_val = (float)sum_green / (float)sample_count;
 
@@ -444,6 +447,7 @@ int main(void)
                         (float)ax_raw, (float)ay_raw, (float)az_raw,
                         (float)hf_raw);
       }
+#endif /* !ENABLE_RAW_DATA_PACKET */
 
       allData[TEMP_START_INDEX] = 0x00;
       allData[TEMP_START_INDEX + 1] = 0xFF;
