@@ -752,10 +752,16 @@ float HR_RunSolver(HR_State_t *state)
      * 对心率历史做中值滤波平滑, 抑制突变.
      * 将当前融合心率写入环形历史缓冲区.
      * 平滑时跟随融合决策: 运动段平滑 HF 历史, 静息段平滑 FFT 历史.
+     * 注意: 环形缓冲区需线性化后传入 DSP_MedianSmooth.
      */
     {
         float smoothed;
         uint16_t hist_len;
+        const float *target_hist;
+        float recent_buf[9];
+        uint16_t actual_len;
+        uint16_t base;
+        uint16_t k;
 
         /* 将三路心率写入历史 (环形缓冲区, 始终记录) */
         state->hr_history_lms_hf[state->hr_history_idx]  = state->hr_lms_hf;
@@ -774,13 +780,23 @@ float HR_RunSolver(HR_State_t *state)
             hist_len = HR_HR_HISTORY_LEN;
         }
 
-        /* 中值平滑: 跟随融合路径选择对应历史 */
-        if (state->is_motion) {
-            DSP_MedianSmooth(state->hr_history_lms_hf, hist_len,
-                             HR_SMOOTH_WIN, &smoothed);
+        /* 选择融合路径对应的历史缓冲区 */
+        target_hist = state->is_motion ? state->hr_history_lms_hf
+                                       : state->hr_history_fft;
+
+        /* 从环形缓冲区提取最近 actual_len 个值到线性数组 */
+        actual_len = (hist_len < HR_SMOOTH_WIN) ? hist_len : HR_SMOOTH_WIN;
+        if (actual_len > 9) { actual_len = 9; }
+
+        if (actual_len == 0) {
+            smoothed = 0.0f;
         } else {
-            DSP_MedianSmooth(state->hr_history_fft, hist_len,
-                             HR_SMOOTH_WIN, &smoothed);
+            base = (state->hr_history_idx + HR_HR_HISTORY_LEN - actual_len)
+                   % HR_HR_HISTORY_LEN;
+            for (k = 0; k < actual_len; k++) {
+                recent_buf[k] = target_hist[(base + k) % HR_HR_HISTORY_LEN];
+            }
+            DSP_MedianSmooth(recent_buf, actual_len, actual_len, &smoothed);
         }
 
         /* 用平滑后的值替换融合心率 */
