@@ -28,11 +28,11 @@ extern "C" {
 #define HR_NUM_CHANNELS     6       /* PPG, ACCx, ACCy, ACCz, HF1, HF2 */
 #define HR_FFT_LEN          4096    /* FFT 点数 (实数 RFFT) */
 #define HR_MAX_PEAKS        20      /* 最大候选峰值数 */
-#define HR_MAX_ORDER        16      /* LMS 滤波器最大阶数 */
+#define HR_MAX_ORDER        20      /* LMS 滤波器最大阶数 (MATLAB贝叶斯优化: 跳绳场景20) */
 #define HR_LMS_CASCADE_HF   2       /* HF 路径级联数 */
 #define HR_LMS_CASCADE_ACC  3       /* ACC 路径级联数 */
 #define HR_HR_HISTORY_LEN   120     /* 心率历史 (120 秒 @1Hz 输出) */
-#define HR_SMOOTH_WIN       5       /* 中值平滑窗口 */
+#define HR_SMOOTH_WIN       5       /* 中值平滑窗口 (编译期默认值, 运行时可通过 Smooth_Win_Len 覆盖) */
 
 /* 频率范围 (Hz) */
 #define HR_FREQ_LOW         1.0f    /* 有效心率下限 60 BPM */
@@ -62,6 +62,7 @@ typedef struct {
     float   Motion_Th_Scale;        /* 运动阈值倍数, 默认 3.0 */
     float   Default_Motion_Th;      /* 默认运动阈值 (g 值, 默认 0.07g) */
     uint8_t Spec_Penalty_Enable;    /* 是否启用频谱惩罚 */
+    uint8_t Smooth_Win_Len;         /* 中值平滑窗口长度 (奇数), 默认 9 (MATLAB贝叶斯优化) */
 } HR_Config_t;
 
 /* ============================================================

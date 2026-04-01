@@ -42,16 +42,16 @@ static inline void zscore_inplace(float *sig, uint16_t len)
 void HR_GetDefaultConfig(HR_Config_t *config)
 {
     config->LMS_Mu_Base        = 0.01f;
-    config->Spec_Penalty_Width = 0.2f;
+    config->Spec_Penalty_Width = 0.1f;       /* MATLAB贝叶斯优化: 跳绳 0.1 */
     config->Spec_Penalty_Weight= 0.2f;
-    config->HR_Range_Hz        = 0.25f;
-    config->HR_Range_Rest_Hz   = 0.4f;
-    config->Slew_Limit_BPM     = 10.0f;
-    config->Slew_Step_BPM      = 2.0f;
-    config->Slew_Limit_Rest_BPM= 8.0f;
-    config->Slew_Step_Rest_BPM = 1.0f;
+    config->HR_Range_Hz        = 0.3333f;    /* MATLAB贝叶斯优化: 跳绳 0.3333 */
+    config->HR_Range_Rest_Hz   = 0.6667f;    /* MATLAB贝叶斯优化: 跳绳 0.6667 */
+    config->Slew_Limit_BPM     = 14.0f;      /* MATLAB贝叶斯优化: 跳绳 14 */
+    config->Slew_Step_BPM      = 5.0f;       /* MATLAB贝叶斯优化: 跳绳 5 */
+    config->Slew_Limit_Rest_BPM= 8.0f;       /* MATLAB贝叶斯优化: 跳绳 8 */
+    config->Slew_Step_Rest_BPM = 5.0f;       /* MATLAB贝叶斯优化: 跳绳 5 */
     config->Motion_Th_Scale    = 3.0f;
-    config->Default_Motion_Th  = 0.07f;  /* 基于实测: 静息 0.06-0.07g */
+    config->Default_Motion_Th  = 0.07f;      /* 基于实测: 静息 0.06-0.07g */
     config->Spec_Penalty_Enable = 1;
 }
 
