@@ -159,6 +159,7 @@ typedef struct {
     float   hr_fused;               /* 融合心率 (Hz) */
     float   hr_bpm;                 /* 融合心率 (BPM) */
     uint8_t is_motion;              /* 当前运动标志 */
+    uint8_t prev_is_motion;         /* 上一次运动标志 (用于检测 rest->motion 切换) */
 
     /* --- 心率历史追踪 --- */
     float   hr_history_lms_hf[HR_HR_HISTORY_LEN];

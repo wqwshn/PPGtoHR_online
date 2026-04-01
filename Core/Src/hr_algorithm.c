@@ -42,8 +42,8 @@ static inline void zscore_inplace(float *sig, uint16_t len)
 void HR_GetDefaultConfig(HR_Config_t *config)
 {
     config->LMS_Mu_Base        = 0.01f;
-    config->Spec_Penalty_Width = 0.1f;       /* MATLAB贝叶斯优化: 跳绳 0.1 */
-    config->Spec_Penalty_Weight= 0.2f;
+    config->Spec_Penalty_Width = 0.15f;      /* 惩罚带宽 0.15Hz (9 BPM) */
+    config->Spec_Penalty_Weight= 0.1f;       /* 惩罚权重: 降至 10% (原 20%) */
     config->HR_Range_Hz        = 0.3333f;    /* MATLAB贝叶斯优化: 跳绳 0.3333 */
     config->HR_Range_Rest_Hz   = 0.6667f;    /* MATLAB贝叶斯优化: 跳绳 0.6667 */
     config->Slew_Limit_BPM     = 14.0f;      /* MATLAB贝叶斯优化: 跳绳 14 */
@@ -371,6 +371,7 @@ float HR_RunSolver(HR_State_t *state)
      */
     state->win_count++;
     if (state->win_count < HR_WIN_SEC) {
+        state->prev_is_motion = state->is_motion;
         return 0.0f;
     }
     state->win_filled = 1;
@@ -459,12 +460,15 @@ float HR_RunSolver(HR_State_t *state)
             }
         }
 
-        /* 条件性 LMS 初始化: 仅在首次运行或阶数变化时重置 */
+        /* 条件性 LMS 初始化: 首次运行 / 阶数变化 / 静息->运动切换 时重置 */
         {
+            uint8_t motion_transition = state->is_motion && !state->prev_is_motion;
             uint8_t need_reinit_hf = (state->win_count == HR_WIN_SEC) ||
-                                     (order_hf != state->prev_order_hf);
+                                     (order_hf != state->prev_order_hf) ||
+                                     motion_transition;
             uint8_t need_reinit_acc = (state->win_count == HR_WIN_SEC) ||
-                                      (order_acc != state->prev_order_acc);
+                                      (order_acc != state->prev_order_acc) ||
+                                      motion_transition;
 
             if (need_reinit_hf) {
                 for (i = 0; i < HR_LMS_CASCADE_HF; i++) {
@@ -581,7 +585,7 @@ float HR_RunSolver(HR_State_t *state)
                          state->peak_freqs, state->peak_amps,
                          HR_MAX_PEAKS, &num_peaks_hf);
 
-            if (motion_freq_hf > 0.0f && num_peaks_hf > 0) {
+            if (state->is_motion && motion_freq_hf > 0.0f && num_peaks_hf > 0) {
                 DSP_SpectrumPenalty(state->peak_freqs, state->peak_amps,
                                    num_peaks_hf, motion_freq_hf,
                                    s_config.Spec_Penalty_Width,
@@ -657,7 +661,7 @@ float HR_RunSolver(HR_State_t *state)
                          state->peak_freqs, state->peak_amps,
                          HR_MAX_PEAKS, &num_peaks_acc);
 
-            if (motion_freq_acc > 0.0f && num_peaks_acc > 0) {
+            if (state->is_motion && motion_freq_acc > 0.0f && num_peaks_acc > 0) {
                 DSP_SpectrumPenalty(state->peak_freqs, state->peak_amps,
                                    num_peaks_acc, motion_freq_acc,
                                    s_config.Spec_Penalty_Width,
@@ -716,7 +720,7 @@ float HR_RunSolver(HR_State_t *state)
                      state->peak_freqs, state->peak_amps,
                      HR_MAX_PEAKS, &num_peaks_fft);
 
-        if (motion_freq_fft > 0.0f && num_peaks_fft > 0) {
+        if (state->is_motion && motion_freq_fft > 0.0f && num_peaks_fft > 0) {
             DSP_SpectrumPenalty(state->peak_freqs, state->peak_amps,
                                num_peaks_fft, motion_freq_fft,
                                s_config.Spec_Penalty_Width,
@@ -845,5 +849,6 @@ float HR_RunSolver(HR_State_t *state)
      * ====================================================== */
     state->hr_bpm = state->hr_fused * 60.0f;
 
+    state->prev_is_motion = state->is_motion;
     return state->hr_bpm;
 }
