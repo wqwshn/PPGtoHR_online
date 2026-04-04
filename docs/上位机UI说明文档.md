@@ -1,21 +1,27 @@
-# PPG 心率监测上位机 UI 说明文档
+# PPG Monitor 统一上位机 UI 说明文档
 
-> 本文档记录上位机心率监测仪表盘的设计、功能、协议交互，供开发和调试参考。
+> 本文档记录统一上位机 monitor 的设计、功能、协议交互，供开发和调试参考。
+> 由原 hr_monitor 和 data_monitor 融合而来。
 
 ---
 
 ## 1. 概述
 
-基于 PyQt5 + pyqtgraph 构建的暗色主题实时心率监测仪表盘，通过串口/蓝牙接收 STM32 单片机发送的心率数据包，实时展示心率值、三路径算法对比、趋势曲线，并支持数据保存和多语言切换。
+基于 PyQt5 + pyqtgraph 构建的暗色主题统一监测上位机，通过串口/蓝牙接收 STM32 单片机数据，支持两种工作面板:
+- **在线心率面板**: 1Hz 心率结果包 (31字节, 0xAA 0xCC)，实时展示融合心率、三路径对比、趋势曲线
+- **原始数据面板**: 125Hz 原始传感器包 (21字节, 0xAA 0xBB)，实时展示 PPG 波形、热膜桥压、加速度计，支持 HR/SpO2 模式自动切换
 
 ### 1.1 运行方式
 
 ```bash
-# 实际串口模式
-python tools/hr_monitor/main.py
+# 实际串口模式 (自动识别两种协议包)
+python tools/monitor/main.py
 
-# 模拟数据模式 (无需硬件)
-python tools/hr_monitor/main.py --simulate
+# HR 模拟数据模式 (1Hz)
+python tools/monitor/main.py --simulate
+
+# 原始数据模拟模式 (125Hz)
+python tools/monitor/main.py --raw-simulate
 ```
 
 ### 1.2 依赖
@@ -25,7 +31,7 @@ python tools/hr_monitor/main.py --simulate
 - pyqtgraph
 - pyserial
 
-安装: `pip install -r tools/hr_monitor/requirements.txt`
+安装: `pip install -r tools/monitor/requirements.txt`
 
 ---
 
@@ -39,8 +45,9 @@ python tools/hr_monitor/main.py --simulate
 | 串口选择 | 自动枚举系统可用串口 |
 | 连接/断开 | 管理串口连接 (115200 bps) |
 | 刷新 | 重新扫描串口列表 |
-| **清屏** | 清除所有数据、曲线、记录缓冲区，重置界面 |
-| **录制** | 点击选择保存路径(默认桌面)并开始录制, 再次点击停止并自动保存 CSV (UTF-8-BOM 编码), 录制期间状态栏显示已录制数据点数 |
+| **面板切换** | "在线心率" / "原始数据" 双面板切换按钮 |
+| **清屏** | 清除当前面板的所有数据、曲线、记录缓冲区 |
+| **录制** | 录制当前面板数据到 CSV (HR面板: 批量保存; 原始面板: 逐包实时写入) |
 | **语言切换** | 中文/English 即时切换，默认中文 |
 | 连接状态 | 文字显示当前连接状态 |
 
@@ -68,7 +75,22 @@ python tools/hr_monitor/main.py --simulate
 - 绿色参考区域: 60-100 BPM 正常心率范围
 - X/Y 轴自动缩放
 
-### 2.5 状态栏
+### 2.5 原始数据面板
+
+顶部信息条显示: 当前模式(HR/SpO2) | 实际采样率 | 丢包率 | 数据包总数
+
+**PPG 波形区** (模式切换):
+- HR 模式: 绿光 PPG 波形 (125Hz 实时)
+- SpO2 模式: 左侧红光+红外 PPG 上下排列 / 右侧温度曲线 + SpO2 预留
+
+**通用波形** (始终显示):
+- 桥顶电压: Ut1 (橙色) + Ut2 (紫色) 水平并排
+- 桥中电压: Uc1 (红色) + Uc2 (蓝色) 水平并排
+- 三轴加速度: AccX(红) + AccY(绿) + AccZ(蓝) 单图三线
+
+波形以 50ms (20FPS) 定时刷新，缓冲区 1000 点。模式根据数据包 byte[17]==0x00 && byte[18]==0xFF 自动切换。
+
+### 2.6 状态栏
 
 显示: 数据包计数 | 运行时间 | [录制数据点数(仅录制时)] | PPG 均值 | 校准进度
 
@@ -128,7 +150,7 @@ CSV 列定义:
 
 ## 5. 通信协议
 
-### 5.1 心率结果包 (21 字节, 1Hz)
+### 5.1 心率结果包 (31 字节, 1Hz, 帧头 0xAA 0xCC)
 
 ```
 偏移  字段                类型        说明
@@ -148,27 +170,54 @@ CSV 列定义:
 20    帧尾                uint8       0xCC
 ```
 
-### 5.2 帧解析状态机
+### 5.2 原始传感器包 (21 字节, 125Hz, 帧头 0xAA 0xBB)
 
-串口读取线程使用逐字节状态机解析:
+```
+偏移  字段                类型        说明
+0-1   帧头                uint8 x2    0xAA, 0xBB
+2-3   桥顶2 (HF2)         uint16 BE   24bit 高16bit+8bit
+4-5   桥顶1 (HF1)         uint16 BE   24bit 高16bit+8bit
+6-7   桥中2               uint16 BE   24bit 高16bit+8bit
+8-9   桥中1               uint16 BE   24bit 高16bit+8bit
+10    ACC X 高字节         uint8
+11    ACC Y 高字节         uint8
+12    ACC Z 高字节         uint8
+13-16 PPG 数据            4 bytes     模式相关 (见下)
+17-18 扩展数据            2 bytes     模式相关 (见下)
+19    XOR 校验             uint8       bytes[2..18] 异或
+20    帧尾                uint8       0xCC
+
+HR 模式:   bytes[13-15]=24bit绿光累加, byte[16]=采样计数
+           bytes[17]=0x00, byte[18]=0xFF (模式标记)
+SpO2 模式: bytes[13-14]=16bit红光均值, bytes[15-16]=16bit红外均值
+           byte[17]=温度整数(有符号), byte[18]=温度小数
+           温度公式: die_temp_int + die_temp_frac * 0.0625 + 2.4 (LED温升补偿)
+```
+
+### 5.3 帧解析状态机
+
+串口读取线程使用双协议状态机:
 1. 等待帧头 0xAA
-2. 等待帧头 0xCC
-3. 收集 payload 直到满 21 字节
+2. 等待第二帧头字节区分协议:
+   - 0xCC -> 31字节 HR 结果包 -> `parse_hr_packet()` -> `HRPacket`
+   - 0xBB -> 21字节 原始传感器包 -> `parse_raw_packet()` -> `RawDataPacket`
+3. 收集 payload 直到满对应长度
 4. XOR 校验 + 帧尾验证
-5. 解析为 `HRPacket` 数据类
+5. 通过不同的 pyqtSignal 发射给对应面板
 
 ---
 
 ## 6. 文件结构
 
 ```
-tools/hr_monitor/
-  main.py            # 程序入口, AppController 连接 Dashboard 和 SerialReader
-  dashboard.py       # 仪表盘 UI 主窗口 (含翻译表、清屏、保存、语言切换)
-  protocol.py        # 20 字节心率包协议定义与解析
-  serial_reader.py   # 串口读取线程 (QThread + 状态机解析)
-  requirements.txt   # Python 依赖
-  start_monitor.bat  # Windows 一键启动脚本
+tools/monitor/
+  main.py              # 程序入口, AppController 连接 MonitorWindow 和 SerialReader
+  dashboard.py         # MonitorWindow(外壳+工具栏) + HRPanel(在线心率面板) + 翻译表/配色
+  raw_data_panel.py    # RawDataPanel(原始数据面板) - PPG/ACC/桥压/SpO2 波形
+  protocol.py          # HRPacket(31字节) + RawDataPacket(21字节) 协议定义与解析
+  serial_reader.py     # 双协议串口读取线程 (QThread + 状态机)
+  requirements.txt     # Python 依赖
+  start_monitor.bat    # Windows 一键启动脚本
 ```
 
 ---
@@ -184,8 +233,9 @@ tools/hr_monitor/
 | 2026-03-28 | 新增采样率显示: 算法路径卡片增加采样率字段, HR结果包扩展至21字节 |
 | 2026-03-29 | 协议升级至31字节: 新增HF2 AC幅值、HF2-PPG相关系数字段; 上位机新增HF1/HF2信号质量显示 (AC幅值+相关系数) |
 | 2026-04-01 | 录制功能重构: "保存"按钮改为"录制"按钮, 点击先选路径(默认桌面)再开始录制, 停止时自动保存, 状态栏显示录制数据点数 |
+| 2026-04-05 | 融合 data_monitor 原始数据功能: 新建 tools/monitor/ 统一上位机, 支持面板切换(在线心率/原始数据); 双协议串口状态机(31字节HR+21字节Raw); 原始数据暗色科技风面板(PPG/桥压/ACC/SpO2, 50ms刷新); 扩展 i18n |
 
 ---
 
-**最后更新**: 2026-04-01
+**最后更新**: 2026-04-05
 **对应分支**: feature/adaptive-filter
