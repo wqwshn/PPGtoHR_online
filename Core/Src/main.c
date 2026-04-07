@@ -22,6 +22,8 @@
 #include "ADC_ADS124.h"
 #include "MIMU.h"
 #include "MAX30101.h"
+#include "MAX30101_2.h"
+#include "ppg_channel.h"
 #include "hr_algorithm.h"
 /* USER CODE END Includes */
 
@@ -190,8 +192,9 @@ int main(void)
    * 模块检测阶段 (Sensor Check Phase)
    * ==================================================================== */
 
-  /* 1. MAX30101 检测 */
-  if (MAX_Check() != 0) {
+  /* 1. MAX30101 检测 (通过通道接口) */
+  PPG_SetChannel(PPG_DEFAULT_CHANNEL);
+  if (PPG_Check() != 0) {
       HAL_UART_Transmit(&huart2, (uint8_t*)"DEBUG: MAX30101 Found!\r\n", 24, 100);
       HAL_Delay(100);
   } else {
@@ -231,9 +234,9 @@ int main(void)
   HAL_UART_Transmit(&huart2, (uint8_t*)"DEBUG: MIMU Init OK\r\n", 21, 1000);
   HAL_Delay(200);
 
-  /* 3. MAX30101 初始化 */
+  /* 3. MAX30101 初始化 (通过通道接口) */
   HAL_UART_Transmit(&huart2, (uint8_t*)"DBG: before MAX30101_Init\r\n", 28, 1000);
-  MAX30101_Init();
+  PPG_Init();
   HAL_UART_Transmit(&huart2, (uint8_t*)"DEBUG: PPG Init OK\r\n", 20, 1000);
   HAL_Delay(200);
 
@@ -393,8 +396,8 @@ int main(void)
       allData[12] = ACC_XYZ[5]; // Z High
 
       /* --- 3. PPG 数据采集 --- */
-      uint8_t wr_ptr = MAX_ReadOneByte(FIFO_WR_PTR_REG);
-      uint8_t rd_ptr = MAX_ReadOneByte(FIFO_RD_PTR_REG);
+      uint8_t wr_ptr = PPG_ReadOneByte(FIFO_WR_PTR_REG);
+      uint8_t rd_ptr = PPG_ReadOneByte(FIFO_RD_PTR_REG);
       uint8_t sample_count = (wr_ptr - rd_ptr) & 0x1F;
 
 #if (CURRENT_WORK_MODE == MODE_SPO2)
@@ -407,19 +410,19 @@ int main(void)
       }
       // 触发阶段：temp_tick == 0 时启动温度转换
       if (temp_tick == 0) {
-          MAX_WriteOneByte(DIE_TEMP_CONFIG_REG, 0x01);
+          PPG_WriteOneByte(DIE_TEMP_CONFIG_REG, 0x01);
       }
       // 读取阶段：temp_tick == 4 时 (32ms后，满足29ms转换时间)
       else if (temp_tick == 4) {
-          die_temp_int = MAX_ReadOneByte(DIE_TEMP_INT_REG);
-          die_temp_frac = MAX_ReadOneByte(DIE_TEMP_FRAC_REG);
+          die_temp_int = PPG_ReadOneByte(DIE_TEMP_INT_REG);
+          die_temp_frac = PPG_ReadOneByte(DIE_TEMP_FRAC_REG);
       }
 
       uint32_t sum_red = 0, sum_ir = 0;
       uint8_t buf[6];  // 每个样本6字节（3字节Red + 3字节IR）
 
       for (uint8_t i = 0; i < sample_count; i++) {
-          MAX_ReadFIFO_Burst(buf, 6);
+          PPG_ReadFIFO_Burst(buf, 6);
           uint32_t red_val = ((buf[0] << 16) | (buf[1] << 8) | buf[2]) & 0x03FFFF;
           uint32_t ir_val = ((buf[3] << 16) | (buf[4] << 8) | buf[5]) & 0x03FFFF;
           sum_red += red_val;
@@ -455,7 +458,7 @@ int main(void)
       uint8_t buf[3];
 
       for (uint8_t i = 0; i < sample_count; i++) {
-          MAX_ReadFIFO_Burst(buf, 3);
+          PPG_ReadFIFO_Burst(buf, 3);
           sum_green += ((buf[0] << 16) | (buf[1] << 8) | buf[2]) & 0x03FFFF;
       }
 
@@ -625,26 +628,26 @@ uint8_t CheckXOR(uint8_t *Buf, uint8_t Len)
 static void PPG_Config_SpO2_Hardcoded(void)
 {
     // --- 1. 工作模式配置 (血氧模式) ---
-    MAX_WriteOneByte(MODE_CONFIG_REG, 0x03);
+    PPG_WriteOneByte(MODE_CONFIG_REG, 0x03);
 
     // --- 2. LED 亮度配置 (Red和IR) ---
-    MAX_WriteOneByte(LED1_PA_REG, 0x91);  // Red LED 电流 ~29mA
-    MAX_WriteOneByte(LED2_PA_REG, 0x91);  // IR LED 电流 ~29mA
+    PPG_WriteOneByte(LED1_PA_REG, 0x91);  // Red LED 电流 ~29mA
+    PPG_WriteOneByte(LED2_PA_REG, 0x91);  // IR LED 电流 ~29mA
 
     // --- 3. SPO2/ADC/采样率/脉宽 配置 ---
     // ADC_RGE=16384nA(0x60) | SR=400sps(0x0C) | PW=411us/18-bit(0x03)
     // 组合值：0x6F
-    MAX_WriteOneByte(SPO2_CONFIG_REG, 0x6F);
+    PPG_WriteOneByte(SPO2_CONFIG_REG, 0x6F);
 
     // --- 4. FIFO 配置 ---
     // SMP_AVE=不平均(0x00) | FIFO_ROLLOVER_EN(0x10) | FIFO_A_FULL=15(0x0F)
     // 组合值：0x1F
-    MAX_WriteOneByte(FIFO_CONFIG_REG, 0x1F);
+    PPG_WriteOneByte(FIFO_CONFIG_REG, 0x1F);
 
     // --- 5. 清除 FIFO 指针/计数器 ---
-    MAX_WriteOneByte(FIFO_WR_PTR_REG, 0x00);
-    MAX_WriteOneByte(OVF_COUNTER_REG, 0x00);
-    MAX_WriteOneByte(FIFO_RD_PTR_REG, 0x00);
+    PPG_WriteOneByte(FIFO_WR_PTR_REG, 0x00);
+    PPG_WriteOneByte(OVF_COUNTER_REG, 0x00);
+    PPG_WriteOneByte(FIFO_RD_PTR_REG, 0x00);
 }
 #endif /* MODE_SPO2 守卫结束 */
 
@@ -653,34 +656,34 @@ static void PPG_Config_Green_Hardcoded(void)
 {
     // --- 1. Mode Configuration (0x09) = 0x07: Multi-LED 模式 ---
     // (HR模式只能用绿光，必须使用Multi-LED模式)
-    MAX_WriteOneByte(MODE_CONFIG_REG, 0x07);
+    PPG_WriteOneByte(MODE_CONFIG_REG, 0x07);
 
     // --- 2. LED_CONTROL1 (0x11) = 0x03: SLOT1=LED3(Green), SLOT2关闭 ---
-    MAX_WriteOneByte(LED_CONTROL1, 0x03);
+    PPG_WriteOneByte(LED_CONTROL1, 0x03);
 
     // --- 3. LED_CONTROL2 (0x12) = 0x00: 关闭 SLOT3 和 SLOT4 ---
-    MAX_WriteOneByte(LED_CONTROL2, 0x00);
+    PPG_WriteOneByte(LED_CONTROL2, 0x00);
 
-    // --- 4. LED3_PA_REG (0x0E) = 0x5F: 绿光亮度约 19mA ---
-    MAX_WriteOneByte(LED3_PA_REG, 0x71);
+    // --- 4. LED3_pa_REG (0x0E) = 0x5F: 绿光亮度约 19mA ---
+    PPG_WriteOneByte(LED3_PA_REG, 0x71);
 
     // --- 5. SPO2_CONFIG_REG (0x0A) = 0x77 ---
     // Bit7-5: 011 = 16384nA 满量程
     // Bit4-2: 111 = 1000sps 内部采样频率
     // Bit1-0: 11 = 411us/18-bit 最长脉宽
-    MAX_WriteOneByte(SPO2_CONFIG_REG, 0x77);
+    PPG_WriteOneByte(SPO2_CONFIG_REG, 0x77);
 
     // --- 6. FIFO_CONFIG_REG (0x08) = 0x5F ---
     // Bit6: 1 (Sample Average = 4倍硬件平均)
     // Bit5: 1 (使能)
     // Bit4: 1 (FIFO Rollover 使能)
     // Bit0-3: 1111 (FIFO_A_FULL = 15)
-    MAX_WriteOneByte(FIFO_CONFIG_REG, 0x5F);
+    PPG_WriteOneByte(FIFO_CONFIG_REG, 0x5F);
 
     // --- 7. 清除 FIFO 指针 ---
-    MAX_WriteOneByte(FIFO_WR_PTR_REG, 0x00);
-    MAX_WriteOneByte(OVF_COUNTER_REG, 0x00);
-    MAX_WriteOneByte(FIFO_RD_PTR_REG, 0x00);
+    PPG_WriteOneByte(FIFO_WR_PTR_REG, 0x00);
+    PPG_WriteOneByte(OVF_COUNTER_REG, 0x00);
+    PPG_WriteOneByte(FIFO_RD_PTR_REG, 0x00);
 }
 
 /* ==============================================================================
