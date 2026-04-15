@@ -35,9 +35,12 @@ typedef enum {
 
 /*
  * 当前PPG通道选择 (编译时默认值)
- * 修改此值切换通道，也可在运行时通过 PPG_SetChannel() 切换
+ * 注意: 此值已在 main.h 中统一定义, 请在 main.h 中修改
+ * 此处仅作兜底默认值, main.h 中有定义时自动跳过
  */
+#ifndef PPG_DEFAULT_CHANNEL
 #define PPG_DEFAULT_CHANNEL  PPG_CH2
+#endif
 
 /* Exported variables --------------------------------------------------------*/
 extern PPG_Channel_t g_ppg_channel;

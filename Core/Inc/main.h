@@ -98,13 +98,34 @@ void Error_Handler(void);
 #define CS_M_GPIO_Port GPIOB
 /* USER CODE BEGIN Private defines */
 
-// 工作模式常量定义
+/* ============================================================
+ * 系统配置开关 (统一修改区, 改后重新编译烧录即可生效)
+ * ============================================================ */
+
+/* 工作模式选择 */
 #define MODE_HEART_RATE 0
 #define MODE_SPO2       1
+#define CURRENT_WORK_MODE    MODE_HEART_RATE   /* 0=心率模式, 1=血氧模式 */
 
-// 注意: CURRENT_WORK_MODE 开关已移至 main.c 顶部，方便统一修改
+/* 数据发送模式选择 (两种模式互斥, 不会同时发送)
+ * 0 = 在线心率模式: 运行算法, 仅发送 1Hz HR 结果包 (0xAA 0xCC) [仅125Hz]
+ * 1 = 原始数据模式: 仅发送原始数据包 (0xAA 0xBB), 不运行算法 [所有采样率]
+ */
+#define ENABLE_RAW_DATA_PACKET  1
 
-// 统一数据包长度为21字节
+/* PPG 通道选择: 1=PPG1(IIC1总线), 2=PPG2(IIC2总线) */
+#define PPG_DEFAULT_CHANNEL     2
+
+/* PPG 采样率 (Hz): 50 / 100 / 125
+ * 50Hz:  内部 800sps / 16x 硬件平均 = 50sps
+ * 100Hz: 内部 800sps / 8x  硬件平均 = 100sps
+ * 125Hz: 内部 1000sps / 4x 硬件平均 = 250sps, MCU 125Hz 读取
+ */
+#define PPG_SAMPLE_RATE         125
+
+/* ============================================================ */
+
+/* 统一数据包长度为21字节 */
 #define PACKET_LEN 21
 #define XOR_CHECK_LEN 17  // 校验区域统一为17字节 (ADC(8) + ACC(3) + PPG(4) + 扩展(2))
 
