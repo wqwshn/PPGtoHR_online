@@ -121,7 +121,7 @@ void Error_Handler(void);
  * 100Hz: 内部 800sps / 8x  硬件平均 = 100sps
  * 125Hz: 内部 1000sps / 4x 硬件平均 = 250sps, MCU 125Hz 读取
  */
-#define PPG_SAMPLE_RATE         125
+#define PPG_SAMPLE_RATE         100
 
 /* ============================================================ */
 
