@@ -445,17 +445,27 @@ int main(void)
       /* --- 3.3 心率模式: 计算 PPG 均值用于算法 + 保留原始数据包 --- */
       uint32_t sum_green = 0;
       uint8_t buf[3];
+      /* 缓存上次有效 PPG 均值, 防止 FIFO 空读时数据跳变到 0
+       * 原因: 50Hz/100Hz 模式下 MAX30101 有效输出速率与 MCU 读取速率精确匹配,
+       * 两者时钟独立导致微小频漂, 周期性出现 FIFO 为空 (sample_count=0),
+       * 若直接发送 sum=0 会在上位机产生跳变到 1000.0 的周期性毛刺 */
+      static uint32_t last_ppg_avg = 0;
 
       for (uint8_t i = 0; i < sample_count; i++) {
           PPG_ReadFIFO_Burst(buf, 3);
           sum_green += ((buf[0] << 16) | (buf[1] << 8) | buf[2]) & 0x03FFFF;
       }
 
-      /* 原始数据包: 保留 sum + count 格式 */
-      allData[PPG_START_INDEX]     = (sum_green >> 16) & 0xFF;
-      allData[PPG_START_INDEX + 1] = (sum_green >> 8)  & 0xFF;
-      allData[PPG_START_INDEX + 2] =  sum_green        & 0xFF;
-      allData[PPG_START_INDEX + 3] = sample_count;
+      /* 计算均值并缓存; FIFO 空时沿用上次有效值 */
+      if (sample_count > 0) {
+          last_ppg_avg = sum_green / sample_count;
+      }
+
+      /* 原始数据包: 发送有效均值 (avg + count=1 格式) */
+      allData[PPG_START_INDEX]     = (last_ppg_avg >> 16) & 0xFF;
+      allData[PPG_START_INDEX + 1] = (last_ppg_avg >> 8)  & 0xFF;
+      allData[PPG_START_INDEX + 2] =  last_ppg_avg        & 0xFF;
+      allData[PPG_START_INDEX + 3] = 1;
 
       /* 算法数据: 推送 float 采样点 (仅在线心率模式) */
 #if (!ENABLE_RAW_DATA_PACKET)
