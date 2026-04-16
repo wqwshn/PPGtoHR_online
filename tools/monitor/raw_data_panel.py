@@ -142,19 +142,27 @@ class RawDataPanel(QWidget):
         uc_layout.addWidget(self._plot_Uc2)
         layout.addWidget(uc_widget, 1)
 
+        # MIMU 区域: 左=ACC, 右=GYRO (水平布局)
+        imu_widget = QWidget()
+        imu_layout = QHBoxLayout(imu_widget)
+        imu_layout.setContentsMargins(0, 0, 0, 0)
+        imu_layout.setSpacing(6)
+
         # 三轴加速度
         self._plot_acc, self._curve_accx = self._make_plot("ACC (g)", COLOR_RED)
         self._curve_accy = self._plot_acc.plot(pen=pg.mkPen(COLOR_GREEN, width=1.5))
         self._curve_accz = self._plot_acc.plot(pen=pg.mkPen("#3B82F6", width=1.5))
         self._plot_acc.addLegend(offset=(60, 10))
-        layout.addWidget(self._plot_acc, 2)
+        imu_layout.addWidget(self._plot_acc)
 
         # 三轴陀螺仪
         self._plot_gyro, self._curve_gyrox = self._make_plot("GYRO (dps)", COLOR_RED)
         self._curve_gyroy = self._plot_gyro.plot(pen=pg.mkPen(COLOR_GREEN, width=1.5))
         self._curve_gyroz = self._plot_gyro.plot(pen=pg.mkPen("#3B82F6", width=1.5))
         self._plot_gyro.addLegend(offset=(60, 10))
-        layout.addWidget(self._plot_gyro, 2)
+        imu_layout.addWidget(self._plot_gyro)
+
+        layout.addWidget(imu_widget, 2)
 
     def _build_info_bar(self) -> QFrame:
         """顶部状态信息条"""
