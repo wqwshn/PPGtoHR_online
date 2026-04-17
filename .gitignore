@@ -63,3 +63,9 @@ docs/*.pdf
 
 # 已融合的参考上位机 (源码已在 tools/monitor/)
 tools/data_monitor/
+
+# 调试截图 (二进制, 不纳入版本管理)
+bug/*.png
+
+# clangd 缓存
+.cache/
