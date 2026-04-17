@@ -157,7 +157,7 @@ void MIMU_Init(void){
 	 * CTRL_REG7_XL=0xC4: 高分辨率, 数字滤波ODR/9, 滤波后输出
 	 */
 	ACC_GYRO_Write(CTRL_REG6_XL, 0x70);
-	ACC_GYRO_Write(CTRL_REG7_XL, 0xC4);
+	ACC_GYRO_Write(CTRL_REG7_XL, 0x00);  // FDS=1会导致ACC输出趋零
 
 	/* Step-6: 磁力计配置 (保持原有配置不变) */
 	MAG_Write(CTRL_REG1_M, 0xFC);  // 磁温补, XY轴UHP模式, ODR=80Hz

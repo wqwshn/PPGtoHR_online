@@ -380,13 +380,16 @@ int main(void)
       /* --- 1. 打包 ADC (保留原逻辑) --- */
       // 数据已由中断填充在 allData[2] ~ allData[9]
 
-      /* --- 2. 打包 ACC 完整 16 位 (X/Y/Z 各2字节, 大端) --- */
-      allData[10] = ACC_XYZ[1];  /* X_H */
-      allData[11] = ACC_XYZ[0];  /* X_L */
-      allData[12] = ACC_XYZ[3];  /* Y_H */
-      allData[13] = ACC_XYZ[2];  /* Y_L */
-      allData[14] = ACC_XYZ[5];  /* Z_H */
-      allData[15] = ACC_XYZ[4];  /* Z_L */
+      /* --- 2. 打包 ACC 完整 16 位 (X/Y/Z 各2字节, 大端, Z轴取反) --- */
+      allData[10] = ACC_XYZ[1];
+      allData[11] = ACC_XYZ[0];
+      allData[12] = ACC_XYZ[3];
+      allData[13] = ACC_XYZ[2];
+      {
+          int16_t az = -(int16_t)((ACC_XYZ[5] << 8) | ACC_XYZ[4]);
+          allData[14] = (uint8_t)(az >> 8);
+          allData[15] = (uint8_t)(az & 0xFF);
+      }
 
       /* --- 2.5 打包 GYRO 完整 16 位 (扣除零偏) --- */
       {
