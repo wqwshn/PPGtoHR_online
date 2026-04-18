@@ -65,7 +65,7 @@ def main():
     )
     parser.add_argument(
         "--raw-simulate", action="store_true",
-        help="Run with raw sensor simulated data (125Hz)",
+        help="Run with raw sensor simulated data (100Hz)",
     )
     args = parser.parse_args()
 

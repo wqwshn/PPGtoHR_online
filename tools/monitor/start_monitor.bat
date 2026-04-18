@@ -6,7 +6,7 @@ REM   PPG Monitor 启动脚本
 REM   用法:
 REM     start_monitor.bat                - 串口模式
 REM     start_monitor.bat --simulate     - HR 模拟数据模式
-REM     start_monitor.bat --raw-simulate - 原始数据模拟模式 (125Hz)
+REM     start_monitor.bat --raw-simulate - 原始数据模拟模式 (100Hz)
 REM ========================================
 
 echo [PPG Monitor] 正在启动...

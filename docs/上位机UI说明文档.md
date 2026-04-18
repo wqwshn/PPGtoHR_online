@@ -9,7 +9,7 @@
 
 基于 PyQt5 + pyqtgraph 构建的暗色主题统一监测上位机，通过串口/蓝牙接收 STM32 单片机数据，支持两种工作面板:
 - **在线心率面板**: 1Hz 心率结果包 (31字节, 0xAA 0xCC)，实时展示融合心率、三路径对比、趋势曲线
-- **原始数据面板**: 125Hz 原始传感器包 (21字节, 0xAA 0xBB)，实时展示 PPG 波形、热膜桥压、加速度计，支持 HR/SpO2 模式自动切换
+- **原始数据面板**: 100Hz 原始传感器包 (33字节, 0xAA 0xBB)，实时展示 PPG 波形、热膜桥压、加速度计、陀螺仪
 
 ### 1.1 运行方式
 
@@ -20,7 +20,7 @@ python tools/monitor/main.py
 # HR 模拟数据模式 (1Hz)
 python tools/monitor/main.py --simulate
 
-# 原始数据模拟模式 (125Hz)
+# 原始数据模拟模式 (100Hz)
 python tools/monitor/main.py --raw-simulate
 ```
 
@@ -81,7 +81,7 @@ python tools/monitor/main.py --raw-simulate
 顶部信息条显示: 当前模式(HR/SpO2) | 实际采样率 | 丢包率 | 数据包总数
 
 **PPG 波形区** (模式切换):
-- HR 模式: 绿光 PPG 波形 (125Hz 实时)
+- HR 模式: 绿光 PPG 波形 (100Hz 实时)
 - SpO2 模式: 左侧红光+红外 PPG 上下排列 / 右侧温度曲线 + SpO2 预留
 
 **通用波形** (始终显示):
@@ -167,12 +167,12 @@ CSV 列定义:
 14    运动校准状态         uint8       0=未校准, 1=已校准
 15-16 时间戳              uint16 BE   秒计数器
 17    校准窗口进度         uint8       0-8
-18    采样率              uint8       固定 125
+18    采样率              uint8       固定 100
 19    XOR 校验             uint8       bytes[2..18] 异或
 20    帧尾                uint8       0xCC
 ```
 
-### 5.2 原始传感器包 (21 字节, 125Hz, 帧头 0xAA 0xBB)
+### 5.2 原始传感器包 (33 字节, 100Hz, 帧头 0xAA 0xBB)
 
 ```
 偏移  字段                类型        说明

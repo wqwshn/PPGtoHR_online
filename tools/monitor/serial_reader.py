@@ -26,7 +26,7 @@ class SerialReader(QThread):
 
     # 信号: 心率结果包 (1Hz)
     hr_packet_received = pyqtSignal(HRPacket)
-    # 信号: 原始传感器包 (125Hz)
+    # 信号: 原始传感器包 (100Hz)
     raw_packet_received = pyqtSignal(RawDataPacket)
     # 信号: 陀螺仪标定状态文本
     calib_status_received = pyqtSignal(str)
@@ -74,7 +74,7 @@ class SerialReader(QThread):
 
         try:
             while self._running:
-                # 非阻塞读取, 增大缓冲区以适应 125Hz 吞吐
+                # 非阻塞读取, 增大缓冲区以适应 100Hz 吞吐
                 raw = self._serial.read(4096)
                 if not raw:
                     continue

@@ -983,7 +983,7 @@ class HRPanel(QWidget):
             win_filled=t >= 8, hr_lms_hf=round(bpm + 1.2, 1),
             hr_lms_acc=round(bpm - 0.8, 1), hr_fft=round(bpm + 0.3, 1),
             ppg_mean=85000 + (hash(t) % 5000), motion_calibrated=t >= 8,
-            timestamp=t, calib_progress=min(t, 8), sampling_rate=125,
+            timestamp=t, calib_progress=min(t, 8), sampling_rate=100,
             hf1_ac_mv=round(0.5 + (hash(t * 7) % 100) / 100.0, 2),
             hf1_ppg_corr=round(0.3 + (hash(t * 13) % 50) / 100.0, 3),
             acc_ppg_corr=round(0.2 + (hash(t * 17) % 40) / 100.0, 3),

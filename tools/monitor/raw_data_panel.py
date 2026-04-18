@@ -68,12 +68,16 @@ class RawDataPanel(QWidget):
         self._recording_start_time: Optional[float] = None
         self._flush_counter = 0
 
+        # 绘图优化: 脏标记 + 最新包缓存 (避免无数据重绘和高频UI更新)
+        self._data_dirty = False
+        self._last_pkt: Optional[RawDataPacket] = None
+
         self._init_ui()
 
-        # 波形刷新定时器 (66ms = 15FPS)
+        # 波形刷新定时器 (50ms = 20FPS)
         self._plot_timer = QTimer(self)
         self._plot_timer.timeout.connect(self._update_plots)
-        self._plot_timer.start(66)
+        self._plot_timer.start(50)
 
         # 采样率计算定时器 (1s)
         self._rate_timer = QTimer(self)
@@ -257,8 +261,9 @@ class RawDataPanel(QWidget):
                 self._csv_file.flush()
                 self._flush_counter = 0
 
-        # 更新信息条
-        self._update_info_bar(pkt)
+        # 标记数据已更新 (信息条更新移至 _update_plots 中按帧率执行)
+        self._data_dirty = True
+        self._last_pkt = pkt
 
     def _update_info_bar(self, pkt: RawDataPacket):
         t = TRANSLATIONS[self._lang]
@@ -289,8 +294,11 @@ class RawDataPanel(QWidget):
         """50ms 定时刷新波形"""
         if len(self._data_Uc1) == 0:
             return
+        if not self._data_dirty:
+            return
+        self._data_dirty = False
 
-        # PPG 三通道波形 (始终更新)
+        # PPG 三通道波形
         self._curve_ppg_g.setData(list(self._data_ppg_g))
         self._curve_ppg_r.setData(list(self._data_ppg_r))
         self._curve_ppg_ir.setData(list(self._data_ppg_ir))
@@ -310,6 +318,10 @@ class RawDataPanel(QWidget):
         self._curve_gyrox.setData(list(self._data_Gyrox))
         self._curve_gyroy.setData(list(self._data_Gyroy))
         self._curve_gyroz.setData(list(self._data_Gyroz))
+
+        # 信息条随绘图帧率更新 (不再逐包刷新)
+        if self._last_pkt is not None:
+            self._update_info_bar(self._last_pkt)
 
     def _update_sample_rate(self):
         """1秒定时器: 刷新采样率"""
@@ -442,9 +454,9 @@ class RawDataPanel(QWidget):
     # ── 模拟模式 ─────────────────────────────────────────
 
     def start_simulation(self):
-        """启动 125Hz 模拟数据"""
+        """启动 100Hz 模拟数据"""
         self._sim_step = 0
-        self._sim_timer.start(8)  # ~125Hz
+        self._sim_timer.start(10)  # 100Hz
 
     def stop_simulation(self):
         """停止模拟"""
