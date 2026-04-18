@@ -68,16 +68,12 @@ class RawDataPanel(QWidget):
         self._recording_start_time: Optional[float] = None
         self._flush_counter = 0
 
-        # 绘图优化: 脏标记 + 最新包缓存 (避免无数据重绘和高频UI更新)
-        self._data_dirty = False
-        self._last_pkt: Optional[RawDataPacket] = None
-
         self._init_ui()
 
-        # 波形刷新定时器 (50ms = 20FPS)
+        # 波形刷新定时器 (33ms = 30FPS)
         self._plot_timer = QTimer(self)
         self._plot_timer.timeout.connect(self._update_plots)
-        self._plot_timer.start(50)
+        self._plot_timer.start(33)
 
         # 采样率计算定时器 (1s)
         self._rate_timer = QTimer(self)
@@ -218,8 +214,6 @@ class RawDataPanel(QWidget):
         pw.getAxis("left").setPen(pg.mkPen(COLOR_TEXT_DIM))
         pw.getAxis("bottom").setPen(pg.mkPen(COLOR_TEXT_DIM))
         pw.setBackground(COLOR_CARD)
-        pw.setClipToView(True)
-        pw.setDownsampling(auto=True)
         curve = pw.plot(pen=pg.mkPen(color, width=1.5))
         return pw, curve
 
@@ -261,9 +255,8 @@ class RawDataPanel(QWidget):
                 self._csv_file.flush()
                 self._flush_counter = 0
 
-        # 标记数据已更新 (信息条更新移至 _update_plots 中按帧率执行)
-        self._data_dirty = True
-        self._last_pkt = pkt
+        # 信息条逐包更新
+        self._update_info_bar(pkt)
 
     def _update_info_bar(self, pkt: RawDataPacket):
         t = TRANSLATIONS[self._lang]
@@ -291,12 +284,9 @@ class RawDataPanel(QWidget):
             )
 
     def _update_plots(self):
-        """50ms 定时刷新波形"""
+        """33ms 定时刷新波形"""
         if len(self._data_Uc1) == 0:
             return
-        if not self._data_dirty:
-            return
-        self._data_dirty = False
 
         # PPG 三通道波形
         self._curve_ppg_g.setData(list(self._data_ppg_g))
@@ -318,10 +308,6 @@ class RawDataPanel(QWidget):
         self._curve_gyrox.setData(list(self._data_Gyrox))
         self._curve_gyroy.setData(list(self._data_Gyroy))
         self._curve_gyroz.setData(list(self._data_Gyroz))
-
-        # 信息条随绘图帧率更新 (不再逐包刷新)
-        if self._last_pkt is not None:
-            self._update_info_bar(self._last_pkt)
 
     def _update_sample_rate(self):
         """1秒定时器: 刷新采样率"""
