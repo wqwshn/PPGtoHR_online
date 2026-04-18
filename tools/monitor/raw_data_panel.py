@@ -30,8 +30,10 @@ from dashboard import (
     TRANSLATIONS,
 )
 
-# 显示缓冲区大小
-PLOT_POINTS = 1000
+# 数据缓冲区大小 (存储量, 大于可见窗口以平滑过渡)
+PLOT_BUFFER = 2000
+# 可见窗口大小 (实际绘制点数)
+VISIBLE_POINTS = 800
 
 
 class RawDataPanel(QWidget):
@@ -42,24 +44,27 @@ class RawDataPanel(QWidget):
         self._lang = "zh"
 
         # 数据缓冲区
-        self._data_Uc1 = deque(maxlen=PLOT_POINTS)
-        self._data_Uc2 = deque(maxlen=PLOT_POINTS)
-        self._data_Ut1 = deque(maxlen=PLOT_POINTS)
-        self._data_Ut2 = deque(maxlen=PLOT_POINTS)
-        self._data_Accx = deque(maxlen=PLOT_POINTS)
-        self._data_Accy = deque(maxlen=PLOT_POINTS)
-        self._data_Accz = deque(maxlen=PLOT_POINTS)
-        self._data_Gyrox = deque(maxlen=PLOT_POINTS)
-        self._data_Gyroy = deque(maxlen=PLOT_POINTS)
-        self._data_Gyroz = deque(maxlen=PLOT_POINTS)
-        self._data_ppg_g = deque(maxlen=PLOT_POINTS)
-        self._data_ppg_r = deque(maxlen=PLOT_POINTS)
-        self._data_ppg_ir = deque(maxlen=PLOT_POINTS)
+        self._data_Uc1 = deque(maxlen=PLOT_BUFFER)
+        self._data_Uc2 = deque(maxlen=PLOT_BUFFER)
+        self._data_Ut1 = deque(maxlen=PLOT_BUFFER)
+        self._data_Ut2 = deque(maxlen=PLOT_BUFFER)
+        self._data_Accx = deque(maxlen=PLOT_BUFFER)
+        self._data_Accy = deque(maxlen=PLOT_BUFFER)
+        self._data_Accz = deque(maxlen=PLOT_BUFFER)
+        self._data_Gyrox = deque(maxlen=PLOT_BUFFER)
+        self._data_Gyroy = deque(maxlen=PLOT_BUFFER)
+        self._data_Gyroz = deque(maxlen=PLOT_BUFFER)
+        self._data_ppg_g = deque(maxlen=PLOT_BUFFER)
+        self._data_ppg_r = deque(maxlen=PLOT_BUFFER)
+        self._data_ppg_ir = deque(maxlen=PLOT_BUFFER)
 
         # 状态
         self._packet_count = 0
         self._sample_count = 0  # 每秒重置, 用于采样率计算
         self._start_time = time.time()
+
+        # 信息条最新包缓存 (按帧率更新, 不逐包刷新)
+        self._last_pkt: Optional[RawDataPacket] = None
 
         # 录制
         self._is_recording = False
@@ -70,10 +75,10 @@ class RawDataPanel(QWidget):
 
         self._init_ui()
 
-        # 波形刷新定时器 (50ms = 20FPS)
+        # 波形刷新定时器 (33ms = 30FPS)
         self._plot_timer = QTimer(self)
         self._plot_timer.timeout.connect(self._update_plots)
-        self._plot_timer.start(50)
+        self._plot_timer.start(33)
 
         # 采样率计算定时器 (1s)
         self._rate_timer = QTimer(self)
@@ -255,8 +260,8 @@ class RawDataPanel(QWidget):
                 self._csv_file.flush()
                 self._flush_counter = 0
 
-        # 信息条逐包更新
-        self._update_info_bar(pkt)
+        # 缓存最新包, 信息条由 _update_plots 按帧率更新
+        self._last_pkt = pkt
 
     def _update_info_bar(self, pkt: RawDataPacket):
         t = TRANSLATIONS[self._lang]
@@ -284,30 +289,34 @@ class RawDataPanel(QWidget):
             )
 
     def _update_plots(self):
-        """50ms 定时刷新波形"""
+        """33ms 定时刷新波形, 仅绘制最近 VISIBLE_POINTS 个点"""
         if len(self._data_Uc1) == 0:
             return
 
-        # PPG 三通道波形
-        self._curve_ppg_g.setData(list(self._data_ppg_g))
-        self._curve_ppg_r.setData(list(self._data_ppg_r))
-        self._curve_ppg_ir.setData(list(self._data_ppg_ir))
+        # PPG 三通道波形 (裁剪至可见窗口)
+        self._curve_ppg_g.setData(list(self._data_ppg_g)[-VISIBLE_POINTS:])
+        self._curve_ppg_r.setData(list(self._data_ppg_r)[-VISIBLE_POINTS:])
+        self._curve_ppg_ir.setData(list(self._data_ppg_ir)[-VISIBLE_POINTS:])
 
         # 桥压波形
-        self._curve_Ut1.setData(list(self._data_Ut1))
-        self._curve_Ut2.setData(list(self._data_Ut2))
-        self._curve_Uc1.setData(list(self._data_Uc1))
-        self._curve_Uc2.setData(list(self._data_Uc2))
+        self._curve_Ut1.setData(list(self._data_Ut1)[-VISIBLE_POINTS:])
+        self._curve_Ut2.setData(list(self._data_Ut2)[-VISIBLE_POINTS:])
+        self._curve_Uc1.setData(list(self._data_Uc1)[-VISIBLE_POINTS:])
+        self._curve_Uc2.setData(list(self._data_Uc2)[-VISIBLE_POINTS:])
 
         # 加速度计波形
-        self._curve_accx.setData(list(self._data_Accx))
-        self._curve_accy.setData(list(self._data_Accy))
-        self._curve_accz.setData(list(self._data_Accz))
+        self._curve_accx.setData(list(self._data_Accx)[-VISIBLE_POINTS:])
+        self._curve_accy.setData(list(self._data_Accy)[-VISIBLE_POINTS:])
+        self._curve_accz.setData(list(self._data_Accz)[-VISIBLE_POINTS:])
 
         # 陀螺仪波形
-        self._curve_gyrox.setData(list(self._data_Gyrox))
-        self._curve_gyroy.setData(list(self._data_Gyroy))
-        self._curve_gyroz.setData(list(self._data_Gyroz))
+        self._curve_gyrox.setData(list(self._data_Gyrox)[-VISIBLE_POINTS:])
+        self._curve_gyroy.setData(list(self._data_Gyroy)[-VISIBLE_POINTS:])
+        self._curve_gyroz.setData(list(self._data_Gyroz)[-VISIBLE_POINTS:])
+
+        # 信息条按帧率更新
+        if self._last_pkt is not None:
+            self._update_info_bar(self._last_pkt)
 
     def _update_sample_rate(self):
         """1秒定时器: 刷新采样率"""
