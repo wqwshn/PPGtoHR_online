@@ -70,10 +70,10 @@ class RawDataPanel(QWidget):
 
         self._init_ui()
 
-        # 波形刷新定时器 (33ms = 30FPS)
+        # 波形刷新定时器 (50ms = 20FPS)
         self._plot_timer = QTimer(self)
         self._plot_timer.timeout.connect(self._update_plots)
-        self._plot_timer.start(33)
+        self._plot_timer.start(50)
 
         # 采样率计算定时器 (1s)
         self._rate_timer = QTimer(self)
@@ -284,7 +284,7 @@ class RawDataPanel(QWidget):
             )
 
     def _update_plots(self):
-        """33ms 定时刷新波形"""
+        """50ms 定时刷新波形"""
         if len(self._data_Uc1) == 0:
             return
 
