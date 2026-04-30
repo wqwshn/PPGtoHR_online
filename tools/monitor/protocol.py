@@ -68,6 +68,15 @@ RAW_XOR_START = 2    # XOR 计算起始偏移
 RAW_XOR_END = 32     # XOR 计算结束偏移 (含)
 RAW_XOR_POS = 33     # XOR 校验值位置
 
+# 1Hz Raw 链路诊断 STATUS 帧常量 (Phase A)
+STATUS_HEADER_BYTE_1 = 0xDD
+RAW_DIAG_PROTOCOL_VERSION = 1
+STATUS_PACKET_LEN = 53
+STATUS_XOR_START = 2
+STATUS_XOR_END = 50
+STATUS_XOR_POS = 51
+STATUS_FOOTER_POS = 52
+
 
 @dataclass
 class HRPacket:
@@ -181,6 +190,24 @@ class RawDataPacket:
     sequence: int         # Raw 采样序号 (uint16, 固件侧采样周期)
 
 
+@dataclass
+class StatusPacket:
+    """解析后的 1Hz Raw 链路诊断状态包"""
+    protocol_version: int
+    mcu_time_ms: int
+    sample_counter: int
+    adc_drdy_counter: int
+    frame_counter: int
+    tx_start_counter: int
+    tx_done_counter: int
+    tx_busy_counter: int
+    tx_error_counter: int
+    adc_error_counter: int
+    imu_error_counter: int
+    ppg_fifo_empty_counter: int
+    ppg_fifo_overflow_counter: int
+
+
 def parse_raw_packet(data: bytes) -> Optional[RawDataPacket]:
     """
     解析 35 字节多光谱原始传感器数据包.
@@ -243,4 +270,60 @@ def parse_raw_packet(data: bytes) -> Optional[RawDataPacket]:
         gyro_x=gyro_x, gyro_y=gyro_y, gyro_z=gyro_z,
         ppg_green=ppg_green, ppg_red=ppg_red, ppg_ir=ppg_ir,
         sequence=sequence,
+    )
+
+
+def _read_u32_be(data: bytes, offset: int) -> int:
+    return (
+        (data[offset] << 24)
+        | (data[offset + 1] << 16)
+        | (data[offset + 2] << 8)
+        | data[offset + 3]
+    )
+
+
+def parse_status_packet(data: bytes) -> Optional[StatusPacket]:
+    """
+    解析 53 字节 Raw 链路诊断 STATUS 包.
+
+    帧格式:
+      0-1   0xAA 0xDD
+      2     protocol_version
+      3-50  12 个 uint32 BE 诊断计数器
+      51    XOR(bytes[2..50])
+      52    0xCC
+    """
+    if len(data) != STATUS_PACKET_LEN:
+        return None
+    if data[0] != RAW_HEADER_BYTE_0 or data[1] != STATUS_HEADER_BYTE_1:
+        return None
+    if data[STATUS_FOOTER_POS] != RAW_FOOTER_BYTE:
+        return None
+
+    xor_val = 0
+    for i in range(STATUS_XOR_START, STATUS_XOR_END + 1):
+        xor_val ^= data[i]
+    if xor_val != data[STATUS_XOR_POS]:
+        return None
+
+    offset = 3
+    fields: list[int] = []
+    for _ in range(12):
+        fields.append(_read_u32_be(data, offset))
+        offset += 4
+
+    return StatusPacket(
+        protocol_version=data[2],
+        mcu_time_ms=fields[0],
+        sample_counter=fields[1],
+        adc_drdy_counter=fields[2],
+        frame_counter=fields[3],
+        tx_start_counter=fields[4],
+        tx_done_counter=fields[5],
+        tx_busy_counter=fields[6],
+        tx_error_counter=fields[7],
+        adc_error_counter=fields[8],
+        imu_error_counter=fields[9],
+        ppg_fifo_empty_counter=fields[10],
+        ppg_fifo_overflow_counter=fields[11],
     )

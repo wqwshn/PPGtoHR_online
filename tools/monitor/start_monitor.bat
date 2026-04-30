@@ -24,10 +24,10 @@ if %errorlevel% neq 0 (
 )
 
 REM 激活 conda 环境
-echo [PPG Monitor] 正在激活 conda 环境: ppg-prj
-call conda activate ppg-prj
+echo [PPG Monitor] 正在激活 conda 环境: ppg_prj
+call conda activate ppg_prj
 if %errorlevel% neq 0 (
-    echo [警告] 未找到 conda 环境 ppg-prj, 使用系统 Python
+    echo [警告] 未找到 conda 环境 ppg_prj, 使用系统 Python
 )
 
 REM 检查依赖

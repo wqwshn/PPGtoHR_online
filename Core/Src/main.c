@@ -68,7 +68,21 @@ uint8_t DOUT[4] = {0, 0, 0, 0};
 
 /* 发送缓冲区 */
 uint8_t allData[50] = {0};
+static uint8_t statusData[STATUS_PACKET_LEN] = {0};
 static uint16_t raw_packet_seq = 0;
+static volatile uint8_t raw_diag_status_pending = 0;
+static volatile uint8_t raw_diag_dma_tx_kind = 0;
+static volatile uint32_t raw_diag_sample_counter = 0;
+static volatile uint32_t raw_diag_adc_drdy_counter = 0;
+static volatile uint32_t raw_diag_frame_counter = 0;
+static volatile uint32_t raw_diag_tx_start_counter = 0;
+static volatile uint32_t raw_diag_tx_done_counter = 0;
+static volatile uint32_t raw_diag_tx_busy_counter = 0;
+static volatile uint32_t raw_diag_tx_error_counter = 0;
+static volatile uint32_t raw_diag_adc_error_counter = 0;
+static volatile uint32_t raw_diag_imu_error_counter = 0;
+static volatile uint32_t raw_diag_ppg_fifo_empty_counter = 0;
+static volatile uint32_t raw_diag_ppg_fifo_overflow_counter = 0;
 
 /* ADC 相关 */
 uint8_t Utop_times1 = 0;
@@ -96,6 +110,9 @@ static uint8_t algorithm_initialized = 0;
 
 // 校验函数
 uint8_t CheckXOR(uint8_t *Buf, uint8_t Len);
+static void WriteU32BE(uint8_t *dst, uint32_t value);
+static void BuildStatusFrame(void);
+static void TryTransmitStatusFrame(void);
 
 // PPG配置函数
 #if (CURRENT_WORK_MODE == MODE_SPO2)
@@ -279,6 +296,10 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+#if (ENABLE_RAW_DATA_PACKET)
+    TryTransmitStatusFrame();
+#endif
+
 #if (!ENABLE_RAW_DATA_PACKET)
     /* ---- 在线心率模式: 每秒执行一次解算并发送 HR 结果包 ---- */
     if (algorithm_initialized && hr_state.flag_1s_ready) {
@@ -412,6 +433,11 @@ int main(void)
       uint8_t wr_ptr = PPG_ReadOneByte(FIFO_WR_PTR_REG);
       uint8_t rd_ptr = PPG_ReadOneByte(FIFO_RD_PTR_REG);
       uint8_t sample_count = (wr_ptr - rd_ptr) & 0x1F;
+      if (sample_count == 0) {
+          raw_diag_ppg_fifo_empty_counter++;
+      } else if (sample_count >= 31) {
+          raw_diag_ppg_fifo_overflow_counter++;
+      }
 
 #if (CURRENT_WORK_MODE == MODE_SPO2)
       /* --- 3.1 血氧模式打包逻辑 --- */
@@ -539,7 +565,16 @@ int main(void)
 
       /* --- 7. DMA 发送 (35 字节) --- */
 #if (ENABLE_RAW_DATA_PACKET)
-      (void)HAL_UART_Transmit_DMA(&huart2, allData, PACKET_LEN);
+      raw_diag_frame_counter++;
+      HAL_StatusTypeDef tx_status = HAL_UART_Transmit_DMA(&huart2, allData, PACKET_LEN);
+      if (tx_status == HAL_OK) {
+          raw_diag_tx_start_counter++;
+          raw_diag_dma_tx_kind = 1;
+      } else if (tx_status == HAL_BUSY) {
+          raw_diag_tx_busy_counter++;
+      } else {
+          raw_diag_tx_error_counter++;
+      }
       raw_packet_seq++;
 #endif
 
@@ -662,6 +697,56 @@ uint8_t CheckXOR(uint8_t *Buf, uint8_t Len)
   return x;
 }
 
+static void WriteU32BE(uint8_t *dst, uint32_t value)
+{
+  dst[0] = (uint8_t)((value >> 24) & 0xFF);
+  dst[1] = (uint8_t)((value >> 16) & 0xFF);
+  dst[2] = (uint8_t)((value >> 8) & 0xFF);
+  dst[3] = (uint8_t)(value & 0xFF);
+}
+
+static void BuildStatusFrame(void)
+{
+  uint8_t pos = 3;
+
+  statusData[0] = 0xAA;
+  statusData[1] = STATUS_HEADER_BYTE_1;
+  statusData[2] = RAW_DIAG_PROTOCOL_VERSION;
+
+  WriteU32BE(&statusData[pos], HAL_GetTick()); pos += 4;
+  WriteU32BE(&statusData[pos], raw_diag_sample_counter); pos += 4;
+  WriteU32BE(&statusData[pos], raw_diag_adc_drdy_counter); pos += 4;
+  WriteU32BE(&statusData[pos], raw_diag_frame_counter); pos += 4;
+  WriteU32BE(&statusData[pos], raw_diag_tx_start_counter); pos += 4;
+  WriteU32BE(&statusData[pos], raw_diag_tx_done_counter); pos += 4;
+  WriteU32BE(&statusData[pos], raw_diag_tx_busy_counter); pos += 4;
+  WriteU32BE(&statusData[pos], raw_diag_tx_error_counter); pos += 4;
+  WriteU32BE(&statusData[pos], raw_diag_adc_error_counter); pos += 4;
+  WriteU32BE(&statusData[pos], raw_diag_imu_error_counter); pos += 4;
+  WriteU32BE(&statusData[pos], raw_diag_ppg_fifo_empty_counter); pos += 4;
+  WriteU32BE(&statusData[pos], raw_diag_ppg_fifo_overflow_counter);
+
+  statusData[STATUS_XOR_INDEX] = CheckXOR(&statusData[2], STATUS_XOR_CHECK_LEN);
+  statusData[STATUS_FOOTER_INDEX] = 0xCC;
+}
+
+static void TryTransmitStatusFrame(void)
+{
+  if (!raw_diag_status_pending) {
+      return;
+  }
+
+  if (huart2.gState != HAL_UART_STATE_READY) {
+      return;
+  }
+
+  BuildStatusFrame();
+  if (HAL_UART_Transmit_DMA(&huart2, statusData, STATUS_PACKET_LEN) == HAL_OK) {
+      raw_diag_dma_tx_kind = 2;
+      raw_diag_status_pending = 0;
+  }
+}
+
 // PPG 血氧模式硬编码配置 (仅 SpO2 模式编译)
 #if (CURRENT_WORK_MODE == MODE_SPO2)
 static void PPG_Config_SpO2_Hardcoded(void)
@@ -701,9 +786,9 @@ static void PPG_Config_Green_Hardcoded(void)
     PPG_WriteOneByte(LED_CONTROL2, MAX30101_MULTI_LED_CTRL2_VAL); /* 0x02 */
 
     /* --- 3. LED 电流: 三通道统一约 12.6mA --- */
-    PPG_WriteOneByte(LED3_PA_REG, 0x71);  /* Green */
-    PPG_WriteOneByte(LED1_PA_REG, 0x61);  /* Red */
-    PPG_WriteOneByte(LED2_PA_REG, 0x61);  /* IR */
+    PPG_WriteOneByte(LED3_PA_REG, 0x91);  /* Green */
+    PPG_WriteOneByte(LED1_PA_REG, 0x81);  /* Red */
+    PPG_WriteOneByte(LED2_PA_REG, 0x81);  /* IR */
 
     /* --- 4. SPO2_CONFIG: RGE + SR + PW (由 sample_rate_config.h 决定) --- */
     PPG_WriteOneByte(SPO2_CONFIG_REG, MAX30101_SPO2_CONFIG_VAL);
@@ -726,6 +811,10 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
     // TIM16: 触发 ADC 采集 (固定频率)
     if (htim == (&htim16)){
+        raw_diag_sample_counter++;
+        if ((raw_diag_sample_counter % PPG_SAMPLE_RATE) == 0) {
+            raw_diag_status_pending = 1;
+        }
         HAL_GPIO_WritePin(CS_A_G_GPIO_Port, CS_A_G_Pin, GPIO_PIN_SET);
         HAL_GPIO_WritePin(GPIOA, SPI1_NSS_Pin, GPIO_PIN_SET);
         HAL_GPIO_WritePin(GPIOA, START_CONV_Pin, GPIO_PIN_SET);
@@ -736,6 +825,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 // GPIO外部中断：读取 ADC 和 MIMU 数据
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
     if(GPIO_Pin == DRDY_Pin){
+        raw_diag_adc_drdy_counter++;
         HAL_GPIO_WritePin(GPIOA, SPI1_NSS_Pin, GPIO_PIN_RESET);
 
         if(ADC_1to4Voltage_flag == 0){
@@ -785,6 +875,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
                     else                       ADC_WREG(ADC_MUX_REG, 0X0C);
                     break;
                 default:
+                    raw_diag_adc_error_counter++;
                     ADC_1to4Voltage_flag = 5;
             }
         }
@@ -794,6 +885,26 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
             ACC_6BytesRead();
             GYRO_6BytesRead();
         }
+    }
+}
+
+void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
+{
+    if (huart == &huart2) {
+        if (raw_diag_dma_tx_kind == 1) {
+            raw_diag_tx_done_counter++;
+        }
+        raw_diag_dma_tx_kind = 0;
+    }
+}
+
+void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
+{
+    if (huart == &huart2) {
+        if (raw_diag_dma_tx_kind == 1) {
+            raw_diag_tx_error_counter++;
+        }
+        raw_diag_dma_tx_kind = 0;
     }
 }
 

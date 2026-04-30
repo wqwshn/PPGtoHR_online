@@ -20,8 +20,8 @@ from PyQt5.QtWidgets import (
 )
 import pyqtgraph as pg
 
-from protocol import RawDataPacket
-from raw_quality import RawQualityStats
+from protocol import RawDataPacket, StatusPacket
+from raw_quality import DiagnosticSnapshot, RawQualityStats
 from realtime_hr import timed_estimate_green_fft_hr
 
 # 复用 dashboard 的配色常量
@@ -44,6 +44,14 @@ RAW_CSV_HEADER = [
     "GyroX(dps)", "GyroY(dps)", "GyroZ(dps)",
     "PPG_Green", "PPG_Red", "PPG_IR",
 ]
+STATUS_CSV_HEADER = [
+    "RxTime(s)", "McuTime(ms)", "SampleCounter", "FrameCounter",
+    "TxStartCounter", "TxDoneCounter", "TxBusyCounter", "TxErrorCounter",
+    "AdcDrdyCounter", "AdcErrorCounter", "ImuErrorCounter",
+    "PpgFifoEmptyCounter", "PpgFifoOverflowCounter",
+    "PcReceivedRaw", "PcExpectedRaw", "PcMissingRaw",
+    "PcMissingAfterTxDone", "TxInflight",
+]
 
 
 def sample_index_to_elapsed_seconds(
@@ -64,6 +72,44 @@ def raw_packet_to_csv_row(pkt: RawDataPacket, elapsed: float, missing_before: in
         round(pkt.acc_x, 5), round(pkt.acc_y, 5), round(pkt.acc_z, 5),
         round(pkt.gyro_x, 3), round(pkt.gyro_y, 3), round(pkt.gyro_z, 3),
         pkt.ppg_green, pkt.ppg_red, pkt.ppg_ir,
+    ]
+
+
+def status_packet_to_summary(
+    status: StatusPacket,
+    snapshot: DiagnosticSnapshot,
+) -> str:
+    return (
+        f"Diag: Busy {status.tx_busy_counter} | Err {status.tx_error_counter} | "
+        f"PCGap {snapshot.pc_missing_after_tx_done} | "
+        f"FIFO {status.ppg_fifo_empty_counter}/{status.ppg_fifo_overflow_counter}"
+    )
+
+
+def status_packet_to_csv_row(
+    status: StatusPacket,
+    snapshot: DiagnosticSnapshot,
+    rx_elapsed: float,
+) -> list:
+    return [
+        round(rx_elapsed, 3),
+        status.mcu_time_ms,
+        status.sample_counter,
+        status.frame_counter,
+        status.tx_start_counter,
+        status.tx_done_counter,
+        status.tx_busy_counter,
+        status.tx_error_counter,
+        status.adc_drdy_counter,
+        status.adc_error_counter,
+        status.imu_error_counter,
+        status.ppg_fifo_empty_counter,
+        status.ppg_fifo_overflow_counter,
+        snapshot.pc_received_raw,
+        snapshot.pc_expected_raw,
+        snapshot.pc_missing_raw,
+        snapshot.pc_missing_after_tx_done,
+        snapshot.tx_inflight,
     ]
 
 
@@ -99,6 +145,7 @@ class RawDataPanel(QWidget):
         self._last_device_hz = 0
         self._last_expected_count = 0
         self._last_hr_calc_ms: Optional[float] = None
+        self._last_status: Optional[StatusPacket] = None
 
         # 信息条最新包缓存 (按帧率更新, 不逐包刷新)
         self._last_pkt: Optional[RawDataPacket] = None
@@ -107,6 +154,8 @@ class RawDataPanel(QWidget):
         self._is_recording = False
         self._csv_file = None
         self._csv_writer = None
+        self._status_csv_file = None
+        self._status_csv_writer = None
         self._recording_start_time: Optional[float] = None
         self._recorded_sample_count = 0
         self._flush_counter = 0
@@ -244,6 +293,12 @@ class RawDataPanel(QWidget):
         )
         layout.addWidget(self._lbl_realtime_hr)
 
+        self._lbl_diag = QLabel("Diag: --")
+        self._lbl_diag.setStyleSheet(
+            f"color: {COLOR_TEXT_DIM}; font-size: 12px; font-weight: bold;"
+        )
+        layout.addWidget(self._lbl_diag)
+
         layout.addStretch()
 
         self._lbl_calib = QLabel("")
@@ -348,6 +403,17 @@ class RawDataPanel(QWidget):
                 f"color: {COLOR_ORANGE}; font-size: 12px; font-weight: bold;"
             )
 
+    def handle_status_data(self, status: StatusPacket):
+        """处理固件 1Hz Raw 链路诊断状态帧。"""
+        snapshot = self._quality.observe_status(status)
+        self._last_status = status
+        self._lbl_diag.setText(status_packet_to_summary(status, snapshot))
+        if self._is_recording and self._status_csv_writer:
+            start = self._recording_start_time or time.time()
+            elapsed = time.time() - start
+            self._status_csv_writer.writerow(status_packet_to_csv_row(status, snapshot, elapsed))
+            self._status_csv_file.flush()
+
     def _update_plots(self):
         """33ms 定时刷新波形, 仅绘制最近 VISIBLE_POINTS 个点"""
         if len(self._data_Uc1) == 0:
@@ -434,9 +500,13 @@ class RawDataPanel(QWidget):
             path = str(
                 save_dir / f"raw_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
             )
+            status_path = path.replace(".csv", "_status.csv")
             self._csv_file = open(path, "w", newline="", encoding="utf-8-sig")
             self._csv_writer = csv.writer(self._csv_file)
             self._csv_writer.writerow(RAW_CSV_HEADER)
+            self._status_csv_file = open(status_path, "w", newline="", encoding="utf-8-sig")
+            self._status_csv_writer = csv.writer(self._status_csv_file)
+            self._status_csv_writer.writerow(STATUS_CSV_HEADER)
             self._recording_start_time = time.time()
             self._recorded_sample_count = 0
             self._reset_quality_stats()
@@ -455,6 +525,11 @@ class RawDataPanel(QWidget):
             self._csv_file.close()
             self._csv_file = None
             self._csv_writer = None
+        if self._status_csv_file:
+            self._status_csv_file.flush()
+            self._status_csv_file.close()
+            self._status_csv_file = None
+            self._status_csv_writer = None
         self._recording_start_time = None
         self._recorded_sample_count = 0
 

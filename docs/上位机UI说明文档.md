@@ -9,7 +9,7 @@
 
 基于 PyQt5 + pyqtgraph 构建的暗色主题统一监测上位机，通过串口/蓝牙接收 STM32 单片机数据，支持两种工作面板:
 - **在线心率面板**: 1Hz 心率结果包 (31字节, 0xAA 0xCC)，实时展示融合心率、三路径对比、趋势曲线
-- **原始数据面板**: 100Hz 原始传感器包 (35字节, 0xAA 0xBB)，实时展示 PPG 波形、热膜桥压、加速度计、陀螺仪和链路质量
+- **原始数据面板**: 100Hz 原始传感器包 (35字节, 0xAA 0xBB)，实时展示 PPG 波形、热膜桥压、加速度计、陀螺仪和链路质量；同时接收 1Hz Raw 链路诊断 STATUS 包 (53字节, 0xAA 0xDD)
 
 ### 1.1 运行方式
 
@@ -93,6 +93,8 @@ python tools/monitor/main.py --raw-simulate
 
 原始数据面板顶部信息条新增 `实时心率/Realtime HR`: 每 1 秒从绿光 PPG 缓冲区取最近 8 秒数据执行轻量纯 FFT 估计，仅用于静息采集时快速判断佩戴位置与绿光信号是否可解算。该计算不进入串口读取线程，也不在逐包 CSV 写入路径中执行；界面同步显示单次计算耗时 `Calc xx ms`，便于观察算法开销。
 
+原始数据面板顶部信息条新增 `Diag`: 显示固件 1Hz STATUS 帧中的关键链路诊断摘要，格式为 `Busy x | Err y | PCGap z | FIFO empty/overflow`。该信息用于判断缺失更可能来自 UART/DMA busy、发送错误、PC 端未收到或 PPG FIFO 空读/溢出。
+
 ### 2.6 状态栏
 
 显示: 数据包计数 | 运行时间 | [录制数据点数(仅录制时)] | PPG 均值 | 校准进度
@@ -111,6 +113,7 @@ python tools/monitor/main.py --raw-simulate
 - 原始数据面板录制: 逐包实时写入 CSV，每 100 包刷盘一次 (避免 GUI 线程阻塞导致丢包)
 - 原始数据面板 `Time(s)` 按 100Hz 样本序号生成，不再使用 UI 主线程处理时间，避免串口/绘图批处理导致时间戳跳变
 - 原始数据面板 CSV 新增 `Seq` 和 `MissingBefore`: `Seq` 为固件侧 Raw 采样序号, `MissingBefore` 为该包前由序号缺口推断的缺失样本数
+- 原始数据面板录制会同时生成同名 `_status.csv`: 记录 1Hz STATUS 计数器快照、PC 端 Raw 接收/缺失统计和 `PCMissingAfterTxDone`，用于采集后诊断链路瓶颈
 - 串口读取线程采用 0.01s timeout + 最多 4 个 Raw 包的小块读取，避免 4096 字节读取造成约 124 包批量进入 UI
 
 ### 3.2 CSV 格式
@@ -204,6 +207,35 @@ CSV 列定义:
 - `Loss`: `missing_count / expected_count`, 其中 `missing_count` 来自 `Seq` 缺口。
 - `MissingBefore`: CSV 中每个包前的缺失样本数。例如序号 11 后直接收到 15, 则序号 15 行的 `MissingBefore=3`。
 
+### 5.3 Raw 链路诊断 STATUS 包 (53 字节, 1Hz, 帧头 0xAA 0xDD)
+
+STATUS 包用于第一阶段链路诊断，不改变 35 字节 Raw DATA 包格式。
+
+```
+偏移   字段                         类型        说明
+0-1    帧头                         uint8 x2    0xAA, 0xDD
+2      protocol_version             uint8       当前为 1
+3-6    mcu_time_ms                  uint32 BE   MCU HAL_GetTick()
+7-10   sample_counter               uint32 BE   TIM16 采样 tick 总数
+11-14  adc_drdy_counter             uint32 BE   ADC DRDY 中断次数
+15-18  frame_counter                uint32 BE   Raw DATA 组帧次数
+19-22  tx_start_counter             uint32 BE   Raw DATA UART DMA 启动成功次数
+23-26  tx_done_counter              uint32 BE   Raw DATA UART DMA 完成回调次数
+27-30  tx_busy_counter              uint32 BE   Raw DATA 发送时 HAL_BUSY 次数
+31-34  tx_error_counter             uint32 BE   Raw DATA UART/DMA 错误次数
+35-38  adc_error_counter            uint32 BE   ADC 状态异常次数
+39-42  imu_error_counter            uint32 BE   IMU 运行期异常次数
+43-46  ppg_fifo_empty_counter       uint32 BE   PPG FIFO 空读次数
+47-50  ppg_fifo_overflow_counter    uint32 BE   PPG FIFO 接近满/溢出风险次数
+51     XOR 校验                      uint8       bytes[2..50] 异或
+52     帧尾                         uint8       0xCC
+```
+
+录制时 `_status.csv` 的关键派生列:
+- `PcReceivedRaw` / `PcExpectedRaw` / `PcMissingRaw`: 上位机按 Raw `Seq` 统计的接收、期望和缺失样本数。
+- `PcMissingAfterTxDone`: `tx_done_counter - PcReceivedRaw` 的非负部分，用于估算 MCU 已完成发送但 PC 未解析成功的帧数。
+- `TxInflight`: `tx_start_counter - tx_done_counter` 的非负部分，用于观察 DMA 是否长期未完成。
+
 历史旧格式摘录如下，当前版本不再使用:
 
 ```
@@ -228,13 +260,14 @@ SpO2 模式: bytes[13-14]=16bit红光均值, bytes[15-16]=16bit红外均值
            温度公式: die_temp_int + die_temp_frac * 0.0625 + 2.4 (LED温升补偿)
 ```
 
-### 5.3 帧解析状态机
+### 5.4 帧解析状态机
 
 串口读取线程使用双协议状态机:
 1. 等待帧头 0xAA
 2. 等待第二帧头字节区分协议:
    - 0xCC -> 31字节 HR 结果包 -> `parse_hr_packet()` -> `HRPacket`
    - 0xBB -> 35字节 原始传感器包 -> `parse_raw_packet()` -> `RawDataPacket`
+   - 0xDD -> 53字节 Raw 链路诊断包 -> `parse_status_packet()` -> `StatusPacket`
 3. 收集 payload 直到满对应长度
 4. XOR 校验 + 帧尾验证
 5. 通过不同的 pyqtSignal 发射给对应面板
@@ -249,8 +282,8 @@ tools/monitor/
   dashboard.py         # MonitorWindow(外壳+工具栏) + HRPanel(在线心率面板) + 翻译表/配色
   raw_data_panel.py    # RawDataPanel(原始数据面板) - PPG/ACC/桥压/SpO2 波形
   realtime_hr.py       # 原始数据面板绿光PPG实时纯FFT心率估计
-  protocol.py          # HRPacket(31字节) + RawDataPacket(35字节) 协议定义与解析
-  serial_reader.py     # 双协议串口读取线程 (QThread + 状态机)
+  protocol.py          # HRPacket(31字节) + RawDataPacket(35字节) + StatusPacket(53字节) 协议定义与解析
+  serial_reader.py     # 多协议串口读取线程 (QThread + 状态机)
   requirements.txt     # Python 依赖
   start_monitor.bat    # Windows 一键启动脚本
 ```
@@ -275,8 +308,9 @@ tools/monitor/
 | 2026-04-24 | 原始数据录制缺点排查修复: 串口读取由 4096 字节大块读取改为低延迟小块读取; Raw CSV 时间列改为按 100Hz 样本序号生成，消除批处理造成的时间戳跳变和点击录制尾部时延 |
 | 2026-04-24 | Raw链路质量评估: 原始数据包扩展为35字节, 新增固件侧 `Seq`; 上位机显示 `RX Hz/DEV Hz/Loss`, CSV新增 `Seq` 与 `MissingBefore` |
 | 2026-04-26 | 原始数据面板新增绿光 PPG 实时纯 FFT 心率估计: 8 秒窗口、1Hz 更新、显示计算耗时; 计算从已有缓冲读取，不影响串口解析和 Raw CSV 逐包保存链路 |
+| 2026-04-30 | Raw链路诊断第一阶段: 新增 53 字节 STATUS 包 (`0xAA 0xDD`) 与 `StatusPacket` 解析; Raw 面板显示 `Diag` 摘要; 录制时同步生成 `_status.csv`，用于采集后定位 MCU 采样/组帧/UART DMA/PC 接收解析问题 |
 
 ---
 
-**最后更新**: 2026-04-26
+**最后更新**: 2026-04-30
 **对应分支**: main

@@ -38,6 +38,7 @@ class AppController:
         # 双协议信号连接
         self._reader.hr_packet_received.connect(self._win._hr_panel.update_data)
         self._reader.raw_packet_received.connect(self._win._raw_panel.handle_raw_data)
+        self._reader.status_packet_received.connect(self._win._raw_panel.handle_status_data)
         self._reader.calib_status_received.connect(self._win._raw_panel.handle_calib_status)
         self._reader.error_occurred.connect(self._on_error)
         self._reader.connection_changed.connect(self._win.set_connected)

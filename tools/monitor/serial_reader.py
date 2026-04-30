@@ -5,6 +5,7 @@ PPG Monitor - 串口读取线程
 支持双协议:
   - 31 字节心率结果包 (0xAA 0xCC) -> hr_packet_received
   - 35 字节多光谱原始传感器包 (0xAA 0xBB) -> raw_packet_received
+  - 53 字节 Raw 链路诊断状态包 (0xAA 0xDD) -> status_packet_received
 """
 from __future__ import annotations
 
@@ -16,12 +17,14 @@ from PyQt5.QtCore import QThread, pyqtSignal
 from protocol import (
     HEADER_BYTE_0, HEADER_BYTE_1, PACKET_LEN,
     RAW_HEADER_BYTE_1, RAW_PACKET_LEN,
+    STATUS_HEADER_BYTE_1, STATUS_PACKET_LEN,
     parse_hr_packet, HRPacket,
     parse_raw_packet, RawDataPacket,
+    parse_status_packet, StatusPacket,
 )
 
 SERIAL_READ_TIMEOUT_S = 0.01
-SERIAL_READ_CHUNK_BYTES = RAW_PACKET_LEN * 4
+SERIAL_READ_CHUNK_BYTES = max(PACKET_LEN, RAW_PACKET_LEN, STATUS_PACKET_LEN) * 4
 
 
 def read_serial_chunk(serial_port) -> bytes:
@@ -38,6 +41,8 @@ class SerialReader(QThread):
     hr_packet_received = pyqtSignal(HRPacket)
     # 信号: 原始传感器包 (100Hz)
     raw_packet_received = pyqtSignal(RawDataPacket)
+    # 信号: Raw 链路诊断状态包 (1Hz)
+    status_packet_received = pyqtSignal(StatusPacket)
     # 信号: 陀螺仪标定状态文本
     calib_status_received = pyqtSignal(str)
     # 信号: 错误信息
@@ -115,6 +120,10 @@ class SerialReader(QThread):
                             buf.append(byte)
                             expected_len = RAW_PACKET_LEN  # 35
                             state = 2
+                        elif byte == STATUS_HEADER_BYTE_1:  # 0xDD -> Raw链路诊断状态包
+                            buf.append(byte)
+                            expected_len = STATUS_PACKET_LEN  # 53
+                            state = 2
                         elif byte == HEADER_BYTE_0:
                             # 连续 0xAA, 重新开始
                             buf = bytearray([byte])
@@ -128,13 +137,17 @@ class SerialReader(QThread):
                                 pkt = parse_hr_packet(bytes(buf))
                                 if pkt is not None:
                                     self.hr_packet_received.emit(pkt)
-                            else:
+                            elif expected_len == RAW_PACKET_LEN:
                                 self._raw_total += 1
                                 pkt = parse_raw_packet(bytes(buf))
                                 if pkt is not None:
                                     self.raw_packet_received.emit(pkt)
                                 else:
                                     self._raw_invalid += 1
+                            else:
+                                status = parse_status_packet(bytes(buf))
+                                if status is not None:
+                                    self.status_packet_received.emit(status)
                             # 重置状态机
                             state = 0
                             buf = bytearray()
